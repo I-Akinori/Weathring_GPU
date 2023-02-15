@@ -1,0 +1,368 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel InitVert
+#pragma kernel InitEdge
+#pragma kernel InitFace
+#pragma kernel TestPBD
+#pragma kernel PBD_StartFrame
+#pragma kernel PBD_Itteration_L
+#pragma kernel PBD_Itteration_B
+#pragma kernel PBD_Update_Ass
+#pragma kernel PBD_Update_Pos
+#pragma kernel SearchVertices
+#pragma kernel SetVertices
+#pragma kernel SetTriangles
+#pragma kernel SetPair
+
+#define SIMULATION_BLOCK_SIZE 256
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+
+uint _VertNum; // The number of vertices
+uint _EdgeNum; // The number of halfedges
+uint _FaceNum; // The number of faces
+uint _LConstNum; // The number of length constraints
+uint _BConstNum; // The number of bend constraints
+float _delta_time;
+uint _itr_count;
+
+struct LengthConstraint {
+    int p0;
+    int p1;
+    float offset;     // HalfEdge
+    float stiff;
+    float thr;
+};
+
+struct BendConstraint {
+    int p0;
+    int p1;
+    int p2;
+    int p3;
+    float offset;     // HalfEdge
+    float stiff;
+    float thr;
+};
+
+struct Vert {
+    float3 pos;
+    float3 nor; 
+    float3 pos0;
+    float3 nor0;
+    float3 vel; 
+    float3 ass;
+    float3 frc;
+    float3 del;
+    int edge;     // HalfEdge
+    float w;
+};
+
+struct Edge {
+    int next;   // HalfEdge
+    int prev;   // HalfEdge
+    int pair;   // HalfEdge
+    int face;   // Face
+    int vert;   // Vertex
+};
+
+struct Face {
+    int edge;   // HalfEdge
+};
+
+struct Vertex {
+    float3 pos;
+    float3 nor;
+};
+
+StructuredBuffer<float3> _PositionBuffer;
+StructuredBuffer<float3> _NormalBuffer;
+RWStructuredBuffer<Vert> _VertBufferRW;
+RWStructuredBuffer<Edge> _EdgeBufferRW;
+RWStructuredBuffer<Face> _FaceBufferRW;
+RWStructuredBuffer<Vertex> _VertexBufferRW;
+RWStructuredBuffer<LengthConstraint> _LengthConstraintBufferRW;
+RWStructuredBuffer<BendConstraint> _BendConstraintBufferRW;
+RWStructuredBuffer<int> _TriangleBufferRW;
+RWStructuredBuffer<uint3> _DeltaPosAsInt;
+RWStructuredBuffer<uint> _DeltaCount;
+
+// helper function for atomic add
+void AtomicAddDelta(int indexIntoDeltaPos, float newDeltaVal, int axis) {
+    uint i_val = asuint(newDeltaVal);
+    uint tmp0 = 0;
+    uint tmp1;
+
+    [allow_uav_condition]
+    while (true) {
+        InterlockedCompareExchange(_DeltaPosAsInt[indexIntoDeltaPos][axis], tmp0, i_val, tmp1);
+
+        if (tmp1 == tmp0) {
+            break;
+        }
+
+        tmp0 = tmp1;
+        i_val = asuint(newDeltaVal + asfloat(tmp1));
+    }
+    return;
+}
+
+void AtomicAddDeltaVector(int indexIntoDeltaPos, float3 newDeltaVal)
+{
+    InterlockedAdd(_DeltaCount[indexIntoDeltaPos], 1);
+    AtomicAddDelta(indexIntoDeltaPos, newDeltaVal.x, 0);
+    AtomicAddDelta(indexIntoDeltaPos, newDeltaVal.y, 1);
+    AtomicAddDelta(indexIntoDeltaPos, newDeltaVal.z, 2);
+    return;
+}
+
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void InitVert
+(
+    uint3 DTid : SV_DispatchThreadID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _VertNum) return;
+
+    _VertBufferRW[P_ID].pos = _PositionBuffer[P_ID];
+    _VertBufferRW[P_ID].nor = _NormalBuffer[P_ID];
+    
+    _VertBufferRW[P_ID].pos0 = _PositionBuffer[P_ID];
+    _VertBufferRW[P_ID].nor0 = _NormalBuffer[P_ID];
+
+    _VertBufferRW[P_ID].vel = float3(0, 0, 0);
+    _VertBufferRW[P_ID].ass = _PositionBuffer[P_ID];
+    _VertBufferRW[P_ID].frc = float3(0, 0, 0);
+    _VertBufferRW[P_ID].del = float3(0, 0, 0);
+    _VertBufferRW[P_ID].w = 1.0;
+    
+    if (_VertBufferRW[P_ID].pos0.y < 2) {
+        _VertBufferRW[P_ID].frc += float3(0, _VertBufferRW[P_ID].pos0.y - 2, 0) * 0.01;
+        _VertBufferRW[P_ID].w = 1.0;
+    }
+}
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void InitEdge
+(
+    uint3 DTid : SV_DispatchThreadID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _EdgeNum) return;
+
+    for (uint j = 0; j < 3; j++) {
+        _EdgeBufferRW[P_ID * 3 + j].next = P_ID * 3 + (j + 1) % 3;
+        _EdgeBufferRW[P_ID * 3 + j].prev = P_ID * 3 + (j + 2) % 3;
+        _EdgeBufferRW[P_ID * 3 + j].vert = _TriangleBufferRW[P_ID * 3 + j];
+        _EdgeBufferRW[P_ID * 3 + j].face = P_ID;
+        _EdgeBufferRW[P_ID * 3 + j].pair = -1; // TO DO: Set PairEdge
+
+        _VertBufferRW[_EdgeBufferRW[P_ID * 3 + j].vert].edge = P_ID * 3 + j;
+    }
+
+}
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void InitFace
+(
+    uint3 DTid : SV_DispatchThreadID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _FaceNum) return;
+
+    _FaceBufferRW[P_ID].edge = P_ID * 3;
+}
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void SetPair
+(
+	uint3 DTid : SV_DispatchThreadID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _EdgeNum) return;
+
+    Edge e0 = _EdgeBufferRW[P_ID];
+    // SIMULATION_BLOCK_SIZE（グループスレッド数）ごとの実行 (グループ数分実行)
+	[loop]
+	for (uint i = 0; i < (uint)_EdgeNum; i++)
+	{
+        Edge e1 = _EdgeBufferRW[i];
+        if (e0.vert == _EdgeBufferRW[e1.next].vert && e1.vert == _EdgeBufferRW[e0.next].vert) {
+            _EdgeBufferRW[P_ID].pair = i;
+            break;
+        }
+	}
+}
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void TestPBD
+(
+    uint3 DTid : SV_DispatchThreadID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _EdgeNum) return;
+
+    _LengthConstraintBufferRW[P_ID].p0 = _EdgeBufferRW[P_ID].vert;
+    _LengthConstraintBufferRW[P_ID].p1 = _EdgeBufferRW[_EdgeBufferRW[P_ID].next].vert;
+    _LengthConstraintBufferRW[P_ID].stiff = 0.99f;
+    _LengthConstraintBufferRW[P_ID].offset = length(_VertBufferRW[_LengthConstraintBufferRW[P_ID].p0].pos - _VertBufferRW[_LengthConstraintBufferRW[P_ID].p1].pos) * 1;
+    _LengthConstraintBufferRW[P_ID].thr = 0.001f;
+}
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void PBD_StartFrame
+(
+    uint3 DTid : SV_DispatchThreadID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _VertNum) return;
+
+    // Add force
+    _VertBufferRW[P_ID].vel += _VertBufferRW[P_ID].frc * _delta_time * _VertBufferRW[P_ID].w;
+    // Attenuate velocity
+    _VertBufferRW[P_ID].vel *= 0.95;
+    // Assume position
+    _VertBufferRW[P_ID].ass = _VertBufferRW[P_ID].pos +_VertBufferRW[P_ID].vel * _delta_time;
+    // To Do: Collision
+    _VertBufferRW[P_ID].del = float3(0, 0, 0);
+    _DeltaPosAsInt[P_ID] = uint3(0, 0, 0);
+    _DeltaCount[P_ID] = 0;
+}
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void PBD_Itteration_L
+(
+    uint3 DTid : SV_DispatchThreadID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _LConstNum) return;
+
+    const Vert v0 = _VertBufferRW[_LengthConstraintBufferRW[P_ID].p0];
+    const Vert v1 = _VertBufferRW[_LengthConstraintBufferRW[P_ID].p1];
+    float3 n01 = v0.ass - v1.ass;
+    const float C_Val = length(n01) - _LengthConstraintBufferRW[P_ID].offset;
+
+    if (abs(C_Val) < _LengthConstraintBufferRW[P_ID].thr) return;
+
+    n01 /= length(n01);
+    
+    const float w0 = v0.w;
+    const float w1 = v1.w;
+    const float s0 = (w0 + w1 == 0) ? 0 : w0 / (w0 + w1) * C_Val;
+    const float s1 = (w0 + w1 == 0) ? 0 : w1 / (w0 + w1) * C_Val;
+    const float k = 1.0 - pow(1.0 - _LengthConstraintBufferRW[P_ID].stiff, 1.0 / (_itr_count + 1));
+
+    //_VertBufferRW[_LengthConstraintBufferRW[P_ID].p0].ass -= s0 * n01 * k;
+    //_VertBufferRW[_LengthConstraintBufferRW[P_ID].p1].ass += s1 * n01 * k;
+
+    //_VertBufferRW[_LengthConstraintBufferRW[P_ID].p0].ass += float3(0, 0.001, 0);
+    //_VertBufferRW[_LengthConstraintBufferRW[P_ID].p1].ass += float3(0, -0.001, 0);
+    //AtomicAddDeltaVector(_LengthConstraintBufferRW[P_ID].p0, float3(0, 0.001, 0));
+    //AtomicAddDeltaVector(_LengthConstraintBufferRW[P_ID].p1, float3(0,  0.001, 0));
+
+    AtomicAddDeltaVector(_LengthConstraintBufferRW[P_ID].p0, - s0 * n01 * k);
+    AtomicAddDeltaVector(_LengthConstraintBufferRW[P_ID].p1, + s1 * n01 * k);
+ }
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void PBD_Itteration_B
+(
+    uint3 DTid : SV_DispatchThreadID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _BConstNum) return;
+
+}
+
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void PBD_Update_Ass
+(
+    uint3 DTid : SV_DispatchThreadID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _VertNum) return;
+
+    if (_DeltaCount[P_ID] > 0) {
+        float dx = asfloat(_DeltaPosAsInt[P_ID].x);
+        float dy = asfloat(_DeltaPosAsInt[P_ID].y);
+        float dz = asfloat(_DeltaPosAsInt[P_ID].z);
+        _VertBufferRW[P_ID].del = float3(dx, dy, dz) / _DeltaCount[P_ID];
+    }
+    
+    _VertBufferRW[P_ID].ass += _VertBufferRW[P_ID].del;
+    _VertBufferRW[P_ID].del = float3(0, 0, 0);
+    _DeltaPosAsInt[P_ID] = uint3(0, 0, 0);
+}
+
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void PBD_Update_Pos
+(
+    uint3 DTid : SV_DispatchThreadID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _VertNum) return;
+    
+    _VertBufferRW[P_ID].vel = (_VertBufferRW[P_ID].ass - _VertBufferRW[P_ID].pos) / _delta_time;
+    _VertBufferRW[P_ID].pos = _VertBufferRW[P_ID].ass;
+}
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void SearchVertices
+(
+    uint3 DTid : SV_DispatchThreadID // スレッド全体で固有のID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _VertNum) return;
+
+    //_VertBufferRW[P_ID].pos += _VertBufferRW[P_ID].nor * 0.001;
+    //_VertBufferRW[(P_ID + 1) % 162].pos += _VertBufferRW[(P_ID + 1) % 162].nor * 0.001;
+    
+    uint slide = 1;
+    uint P_ID_N = (P_ID + slide) % 162;
+
+    //_DeltaPosAsInt[P_ID_N].x += asuint(0.001) * 1;
+    //_DeltaPosAsInt[P_ID_N].y += asuint(0.001) * 1;
+    //_DeltaPosAsInt[P_ID_N].z += asuint(0.001) * 1;
+
+    int out_val;
+    //AtomicAddDelta(P_ID_N, 0.001, 0);
+    
+    //AtomicAddDeltaVector(P_ID, _VertBufferRW[P_ID].nor * 0.001);
+    //AtomicAddDeltaVector(P_ID, _VertBufferRW[P_ID].nor * 0.001);
+    //P_ID_N = P_ID;
+    //AtomicAddDeltaVector(P_ID_N, _VertBufferRW[P_ID_N].nor * 0.001);
+    //AtomicAddDeltaVector(P_ID, _VertBufferRW[P_ID].nor * 0.001);
+}
+
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void SetVertices
+(
+    uint3 DTid : SV_DispatchThreadID // スレッド全体で固有のID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _VertNum) return;
+
+    _VertexBufferRW[P_ID].pos = _VertBufferRW[P_ID].pos;
+    _VertexBufferRW[P_ID].nor = _VertBufferRW[P_ID].nor;
+}
+
+
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void SetTriangles
+(
+    uint3 DTid : SV_DispatchThreadID // スレッド全体で固有のID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _FaceNum) return;
+
+    Edge tmp = _EdgeBufferRW[_FaceBufferRW[P_ID].edge];
+    _TriangleBufferRW[P_ID * 3   ] = tmp.vert;
+    tmp = _EdgeBufferRW[tmp.next];
+    _TriangleBufferRW[P_ID * 3 + 1] = tmp.vert;
+    tmp = _EdgeBufferRW[tmp.next];
+    _TriangleBufferRW[P_ID * 3 + 2] = tmp.vert;
+}
