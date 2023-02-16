@@ -41,6 +41,7 @@ namespace Weathering_GPU
             public Vector3 Ass; // 推定位置
             public Vector3 Frc; // 力
             public Vector3 Del; // 変位
+            public Vector2 uv;
             public int Edge;
             public float Weight;
         };
@@ -58,19 +59,22 @@ namespace Weathering_GPU
         };
         struct VertexData
         {
-            public Vector3 Pos; // 速度
+            public Vector3 Pos; // 位置
             public Vector3 Nor; // 法線
+            public Vector2 UV;
         };
 
         VertexAttributeDescriptor[] layout = new[]
         {
             new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3),
             new VertexAttributeDescriptor(VertexAttribute.Normal, VertexAttributeFormat.Float32, 3),
+            new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 2),
         };
 
         int InitVert;
         int InitFace;
         int InitEdge;
+        int SetPair;
         int PBD_Itteration_L;
         int PBD_Itteration_B;
         int TestPBD;
@@ -85,6 +89,7 @@ namespace Weathering_GPU
         public ComputeShader CS;
         ComputeBuffer _positionBuffer;      // 初期化用
         ComputeBuffer _normalBuffer;
+        ComputeBuffer _uvBuffer;
         ComputeBuffer _lengthConstraintBuffer;      // PBD用
         ComputeBuffer _bendConstraintBuffer;
         ComputeBuffer _deltaPosAsInt;
@@ -120,7 +125,7 @@ namespace Weathering_GPU
             CS.SetInt("_EdgeNum", filter.mesh.triangles.Length);
             CS.SetInt("_FaceNum", filter.mesh.triangles.Length / 3);
             CS.SetInt("_LConstNum", filter.mesh.triangles.Length);
-            CS.SetInt("_BConstNum", 0);
+            CS.SetInt("_BConstNum", filter.mesh.triangles.Length);
 
             sw.Start();
             // バッファを初期化
@@ -131,13 +136,14 @@ namespace Weathering_GPU
             _positionBuffer.SetData(filter.mesh.vertices);
             _normalBuffer = new ComputeBuffer(num, Marshal.SizeOf(typeof(Vector3)));
             _normalBuffer.SetData(filter.mesh.normals);
-
+            _uvBuffer = new ComputeBuffer(num, Marshal.SizeOf(typeof(Vector2)));
+            _uvBuffer.SetData(filter.mesh.uv);
             int threadGroupSize;
-            // 頂点単位の探索
-            
+
             threadGroupSize = Mathf.CeilToInt((float) num / SIMULATION_BLOCK_SIZE);
             CS.SetBuffer(InitVert, "_PositionBuffer", _positionBuffer);
             CS.SetBuffer(InitVert, "_NormalBuffer", _normalBuffer);
+            CS.SetBuffer(InitVert, "_UVBuffer", _uvBuffer);
             CS.SetBuffer(InitVert, "_VertBufferRW", _vertBuffer);
             CS.Dispatch(InitVert, threadGroupSize, 1, 1); // ComputeShaderを実行
 
@@ -167,11 +173,13 @@ namespace Weathering_GPU
             num = filter.mesh.vertexCount;
             _deltaPosAsInt = new ComputeBuffer(num, Marshal.SizeOf(typeof(Vector3Int)));
             CS.SetBuffer(PBD_Itteration_L, "_DeltaPosAsInt", _deltaPosAsInt);
+            CS.SetBuffer(PBD_Itteration_B, "_DeltaPosAsInt", _deltaPosAsInt);
             CS.SetBuffer(SearchVertices, "_DeltaPosAsInt", _deltaPosAsInt);
             CS.SetBuffer(PBD_StartFrame, "_DeltaPosAsInt", _deltaPosAsInt);
             CS.SetBuffer(PBD_Update_Ass, "_DeltaPosAsInt", _deltaPosAsInt);
             _deltaCount = new ComputeBuffer(num, Marshal.SizeOf(typeof(int)));
             CS.SetBuffer(PBD_Itteration_L, "_DeltaCount", _deltaCount);
+            CS.SetBuffer(PBD_Itteration_B, "_DeltaCount", _deltaCount);
             CS.SetBuffer(SearchVertices, "_DeltaCount", _deltaCount);
             CS.SetBuffer(PBD_StartFrame, "_DeltaCount", _deltaCount);
             CS.SetBuffer(PBD_Update_Ass, "_DeltaCount", _deltaCount);
@@ -183,27 +191,28 @@ namespace Weathering_GPU
             CS.SetInt("_EdgeNum", filter.mesh.triangles.Length);
             CS.SetInt("_FaceNum", filter.mesh.triangles.Length / 3);
             CS.SetInt("_LConstNum", filter.mesh.triangles.Length);
-            CS.SetInt("_BConstNum", 0);
+            CS.SetInt("_BConstNum", filter.mesh.triangles.Length);
 
             int threadGroupSize;
             // 頂点情報更新
             threadGroupSize = Mathf.CeilToInt((float)filter.mesh.vertices.Length / SIMULATION_BLOCK_SIZE);
-            CS.SetFloat("_delta_time", Time.deltaTime);
+            CS.SetFloat("_delta_time", Time.deltaTime * 100);
             CS.SetBuffer(PBD_StartFrame, "_VertBufferRW", _vertBuffer);
             CS.Dispatch(PBD_StartFrame, threadGroupSize, 1, 1);
 
             // イテレーション
             CS.SetBuffer(PBD_Itteration_L, "_VertBufferRW", _vertBuffer);
             CS.SetBuffer(PBD_Itteration_L, "_LengthConstraintBufferRW", _lengthConstraintBuffer);
+            CS.SetBuffer(PBD_Itteration_B, "_VertBufferRW", _vertBuffer);
+            CS.SetBuffer(PBD_Itteration_B, "_BendConstraintBufferRW", _bendConstraintBuffer);
             CS.SetBuffer(PBD_Update_Ass, "_VertBufferRW", _vertBuffer);
 
-            CS.SetFloat("_delta_time", Time.deltaTime);
-
-            for (int i = 0; i < 10; i++) {
+            for (int i = 0; i < 200; i++) {
                 CS.SetInt("_itr_count", i);
 
                 threadGroupSize = Mathf.CeilToInt((float)filter.mesh.triangles.Length / SIMULATION_BLOCK_SIZE);
                 CS.Dispatch(PBD_Itteration_L, threadGroupSize, 1, 1);
+                CS.Dispatch(PBD_Itteration_B, threadGroupSize, 1, 1);
 
                 threadGroupSize = Mathf.CeilToInt((float)filter.mesh.vertices.Length / SIMULATION_BLOCK_SIZE);
                 CS.Dispatch(PBD_Update_Ass, threadGroupSize, 1, 1);
@@ -214,26 +223,28 @@ namespace Weathering_GPU
             CS.SetBuffer(PBD_Update_Pos, "_VertBufferRW", _vertBuffer);
             CS.Dispatch(PBD_Update_Pos, threadGroupSize, 1, 1);
         }
-        void SetPair() { 
+        void SetPairEdge() { 
             int id, threadGroupSize;
 
             // 頂点単位の探索
-            id = CS.FindKernel("SetPair");
+            SetPair = CS.FindKernel("SetPair");
             threadGroupSize = Mathf.CeilToInt((float) filter.mesh.triangles.Length / SIMULATION_BLOCK_SIZE);
             CS.SetInt("_EdgeNum", filter.mesh.triangles.Length);
-            CS.SetBuffer(id, "_VertBufferRW", _vertBuffer);
-            CS.SetBuffer(id, "_EdgeBufferRW", _edgeBuffer);
-            //CS.SetBuffer(id, "_TriangleBufferRW", _triangleBuffer);
-            CS.Dispatch(id, threadGroupSize, 1, 1); // ComputeShaderを実行
+            CS.SetBuffer(SetPair, "_VertBufferRW", _vertBuffer);
+            CS.SetBuffer(SetPair, "_EdgeBufferRW", _edgeBuffer);
+            //CS.SetBuffer(SetPair, "_TriangleBufferRW", _triangleBuffer);
+            CS.Dispatch(SetPair, threadGroupSize, 1, 1); // ComputeShaderを実行
         }
         void SetConstraint() {
             // テスト用PBD制約 (稜線の長さを0.1に)
             int num = filter.mesh.triangles.Length;
             int threadGroupSize = Mathf.CeilToInt((float)num / SIMULATION_BLOCK_SIZE);
             _lengthConstraintBuffer = new ComputeBuffer(num, Marshal.SizeOf(typeof(LengthConstraintData)));
+            _bendConstraintBuffer = new ComputeBuffer(num, Marshal.SizeOf(typeof(BendConstraintData)));
             CS.SetBuffer(TestPBD, "_EdgeBufferRW", _edgeBuffer);
             CS.SetBuffer(TestPBD, "_VertBufferRW", _vertBuffer);
             CS.SetBuffer(TestPBD, "_LengthConstraintBufferRW", _lengthConstraintBuffer);
+            CS.SetBuffer(TestPBD, "_BendConstraintBufferRW", _bendConstraintBuffer);
             CS.Dispatch(TestPBD, threadGroupSize, 1, 1);
 
             var constArr = new LengthConstraintData[num];
@@ -249,6 +260,11 @@ namespace Weathering_GPU
             {
                 _normalBuffer.Release();
                 _normalBuffer = null;
+            }
+            if (_uvBuffer != null)
+            {
+                _uvBuffer.Release();
+                _uvBuffer = null;
             }
             if (_edgeBuffer != null)
             {
@@ -316,7 +332,7 @@ namespace Weathering_GPU
             InitIndex();
             InitBuffer();
             //sw.Start();
-            SetPair();
+            SetPairEdge();
             SetConstraint();
         }
 
@@ -375,21 +391,36 @@ namespace Weathering_GPU
             
             var edgeArr = new EdgeData[filter.mesh.triangles.Length];
             _edgeBuffer.GetData(edgeArr);
-            var constArr = new LengthConstraintData[filter.mesh.triangles.Length];
-            _lengthConstraintBuffer.GetData(constArr);
+            var constArr = new BendConstraintData[filter.mesh.triangles.Length];
+            _bendConstraintBuffer.GetData(constArr);
 
+            /*
             for (int i = 0; i < edgeArr.Length; i++) {
-                //if (edgeArr[edgeArr[i].Pair].Pair == i)
-                //    UnityEngine.Debug.DrawLine(vertArr[edgeArr[i].Vert].Pos, vertArr[edgeArr[i].Vert].Pos + vertArr[edgeArr[i].Vert].Nor);
+                if (edgeArr[i].Pair == -1)
+                    UnityEngine.Debug.DrawLine(vertArr[edgeArr[i].Vert].Pos, vertArr[edgeArr[edgeArr[i].Next].Vert].Pos);
+                if (edgeArr[i].Pair >= 0 && edgeArr[edgeArr[i].Next].Vert != edgeArr[edgeArr[i].Pair].Vert)
+                    UnityEngine.Debug.DrawLine(vertArr[edgeArr[i].Vert].Pos, vertArr[edgeArr[edgeArr[i].Next].Vert].Pos);
                 if (i >= edgeArr[i].Pair)
                     continue;
                 Random.InitState(i);
                 var c = Color.HSVToRGB(Random.value, 1, 1);
-                Vector3 dir = vertArr[edgeArr[i].Vert].Pos - vertArr[edgeArr[edgeArr[i].Pair].Vert].Pos;
-                Vector3 bt = Vector3.Cross(dir, vertArr[edgeArr[i].Vert].Nor).normalized * 0.01f; 
+                Vector3 dir = (vertArr[edgeArr[i].Vert].Pos - vertArr[edgeArr[edgeArr[i].Pair].Vert].Pos) * 0.05f;
+                Vector3 bt = Vector3.Cross(dir, vertArr[edgeArr[i].Vert].Nor).normalized * 0.003f; 
                 //UnityEngine.Debug.DrawLine(vertArr[edgeArr[i].Vert].Pos + bt, vertArr[edgeArr[i].Vert].Pos + vertArr[edgeArr[i].Vert].Nor * 0.2f + bt, c);
-                //UnityEngine.Debug.DrawLine(vertArr[edgeArr[i].Vert].Pos + bt, vertArr[edgeArr[edgeArr[i].Next].Vert].Pos + bt, c);
-                //UnityEngine.Debug.DrawLine(vertArr[edgeArr[edgeArr[i].Pair].Vert].Pos - bt, vertArr[edgeArr[edgeArr[edgeArr[i].Pair].Next].Vert].Pos - bt, c);
+                //UnityEngine.Debug.DrawLine(vertArr[edgeArr[i].Vert].Pos - dir + bt, vertArr[edgeArr[edgeArr[i].Next].Vert].Pos + dir + bt, c);
+                //UnityEngine.Debug.DrawLine(vertArr[edgeArr[edgeArr[i].Pair].Vert].Pos + dir - bt, vertArr[edgeArr[edgeArr[edgeArr[i].Pair].Next].Vert].Pos - dir - bt, c);
+            }*/
+
+            for (int i = 0; i < constArr.Length; i++) {
+                if (edgeArr[i].Pair == -1 && constArr[i].Thr < 0) {
+                    continue;
+                }
+                //Random.InitState(i);
+                var c = Color.HSVToRGB(0.66f - Mathf.Abs(constArr[i].Offset) * 3.5f, 1, 1);
+                //UnityEngine.Debug.Log(constArr[i].Offset);
+
+                UnityEngine.Debug.DrawLine(vertexArr[constArr[i].P0].Pos, vertexArr[constArr[i].P1].Pos, c);
+                //UnityEngine.Debug.DrawLine(vertexArr[constArr[i].P2].Pos, vertexArr[constArr[i].P3].Pos, c);
             }
 
             //UnityEngine.Debug.Log(vertexArr[0].Pos);

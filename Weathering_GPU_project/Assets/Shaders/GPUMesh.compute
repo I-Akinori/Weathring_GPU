@@ -29,7 +29,7 @@ uint _itr_count;
 struct LengthConstraint {
     int p0;
     int p1;
-    float offset;     // HalfEdge
+    float offset;
     float stiff;
     float thr;
 };
@@ -39,7 +39,7 @@ struct BendConstraint {
     int p1;
     int p2;
     int p3;
-    float offset;     // HalfEdge
+    float offset;
     float stiff;
     float thr;
 };
@@ -53,6 +53,7 @@ struct Vert {
     float3 ass;
     float3 frc;
     float3 del;
+    float2 uv;
     int edge;     // HalfEdge
     float w;
 };
@@ -72,10 +73,12 @@ struct Face {
 struct Vertex {
     float3 pos;
     float3 nor;
+    float2 uv;
 };
 
 StructuredBuffer<float3> _PositionBuffer;
 StructuredBuffer<float3> _NormalBuffer;
+StructuredBuffer<float2> _UVBuffer;
 RWStructuredBuffer<Vert> _VertBufferRW;
 RWStructuredBuffer<Edge> _EdgeBufferRW;
 RWStructuredBuffer<Face> _FaceBufferRW;
@@ -134,11 +137,13 @@ void InitVert
     _VertBufferRW[P_ID].ass = _PositionBuffer[P_ID];
     _VertBufferRW[P_ID].frc = float3(0, 0, 0);
     _VertBufferRW[P_ID].del = float3(0, 0, 0);
-    _VertBufferRW[P_ID].w = 1.0;
+    _VertBufferRW[P_ID].w = 10 * 1000 * 1000;
+
+    _VertBufferRW[P_ID].uv = _UVBuffer[P_ID];
     
-    if (_VertBufferRW[P_ID].pos0.y < 2) {
-        _VertBufferRW[P_ID].frc += float3(0, _VertBufferRW[P_ID].pos0.y - 2, 0) * 0.01;
-        _VertBufferRW[P_ID].w = 1.0;
+    if (_VertBufferRW[P_ID].pos0.y < 4) {
+        //_VertBufferRW[P_ID].frc += float3(0, _VertBufferRW[P_ID].pos0.y - 4, 0) * 0.01;
+        //_VertBufferRW[P_ID].w = 1.0;
     }
 }
 [numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
@@ -188,7 +193,7 @@ void SetPair
 	{
         Edge e1 = _EdgeBufferRW[i];
         if (e0.vert == _EdgeBufferRW[e1.next].vert && e1.vert == _EdgeBufferRW[e0.next].vert) {
-            _EdgeBufferRW[P_ID].pair = i;
+            _EdgeBufferRW[P_ID].pair = asint(i);
             break;
         }
 	}
@@ -202,12 +207,34 @@ void TestPBD
     const unsigned int P_ID = DTid.x;
     if (P_ID >= _EdgeNum) return;
 
-    _LengthConstraintBufferRW[P_ID].p0 = _EdgeBufferRW[P_ID].vert;
-    _LengthConstraintBufferRW[P_ID].p1 = _EdgeBufferRW[_EdgeBufferRW[P_ID].next].vert;
-    _LengthConstraintBufferRW[P_ID].stiff = 0.99f;
-    _LengthConstraintBufferRW[P_ID].offset = length(_VertBufferRW[_LengthConstraintBufferRW[P_ID].p0].pos - _VertBufferRW[_LengthConstraintBufferRW[P_ID].p1].pos) * 1;
-    _LengthConstraintBufferRW[P_ID].thr = 0.001f;
+    int p = _EdgeBufferRW[P_ID].pair;
+
+    if (p != -1 || P_ID < p) {
+        _LengthConstraintBufferRW[P_ID].p0 = _EdgeBufferRW[P_ID].vert;
+        _LengthConstraintBufferRW[P_ID].p1 = _EdgeBufferRW[_EdgeBufferRW[P_ID].next].vert;
+        _LengthConstraintBufferRW[P_ID].stiff = 1;
+        _LengthConstraintBufferRW[P_ID].offset = length(_VertBufferRW[_LengthConstraintBufferRW[P_ID].p0].pos - _VertBufferRW[_LengthConstraintBufferRW[P_ID].p1].pos) * 1;
+        _LengthConstraintBufferRW[P_ID].thr = 0.001;
+    }
+    else {
+        _LengthConstraintBufferRW[P_ID].thr = -1;
+    }
+
+    
+    if (p != -1 && P_ID < p) {
+        _BendConstraintBufferRW[P_ID].p0 = _EdgeBufferRW[_EdgeBufferRW[P_ID].pair].vert;//_EdgeBufferRW[_EdgeBufferRW[P_ID].pair].vert;
+        _BendConstraintBufferRW[P_ID].p1 = _EdgeBufferRW[P_ID].vert; 
+        _BendConstraintBufferRW[P_ID].p2 = _EdgeBufferRW[_EdgeBufferRW[P_ID].prev].vert;
+        _BendConstraintBufferRW[P_ID].p3 = _EdgeBufferRW[_EdgeBufferRW[_EdgeBufferRW[P_ID].pair].prev].vert;
+        _BendConstraintBufferRW[P_ID].stiff = 1;
+        _BendConstraintBufferRW[P_ID].offset = - 0.2 * abs( dot( normalize(_VertBufferRW[_BendConstraintBufferRW[P_ID].p0].pos - _VertBufferRW[_BendConstraintBufferRW[P_ID].p1].pos), float3(1, 0, 0) ) );
+        _BendConstraintBufferRW[P_ID].thr = 0.001;
+    }
+    else {
+        _BendConstraintBufferRW[P_ID].thr = -1;
+    }
 }
+
 [numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
 void PBD_StartFrame
 (
@@ -220,7 +247,7 @@ void PBD_StartFrame
     // Add force
     _VertBufferRW[P_ID].vel += _VertBufferRW[P_ID].frc * _delta_time * _VertBufferRW[P_ID].w;
     // Attenuate velocity
-    _VertBufferRW[P_ID].vel *= 0.95;
+    _VertBufferRW[P_ID].vel *= 0.99;
     // Assume position
     _VertBufferRW[P_ID].ass = _VertBufferRW[P_ID].pos +_VertBufferRW[P_ID].vel * _delta_time;
     // To Do: Collision
@@ -236,6 +263,7 @@ void PBD_Itteration_L
 {
     const unsigned int P_ID = DTid.x;
     if (P_ID >= _LConstNum) return;
+    if (_LengthConstraintBufferRW[P_ID].thr < 0) return;
 
     const Vert v0 = _VertBufferRW[_LengthConstraintBufferRW[P_ID].p0];
     const Vert v1 = _VertBufferRW[_LengthConstraintBufferRW[P_ID].p1];
@@ -250,15 +278,7 @@ void PBD_Itteration_L
     const float w1 = v1.w;
     const float s0 = (w0 + w1 == 0) ? 0 : w0 / (w0 + w1) * C_Val;
     const float s1 = (w0 + w1 == 0) ? 0 : w1 / (w0 + w1) * C_Val;
-    const float k = 1.0 - pow(1.0 - _LengthConstraintBufferRW[P_ID].stiff, 1.0 / (_itr_count + 1));
-
-    //_VertBufferRW[_LengthConstraintBufferRW[P_ID].p0].ass -= s0 * n01 * k;
-    //_VertBufferRW[_LengthConstraintBufferRW[P_ID].p1].ass += s1 * n01 * k;
-
-    //_VertBufferRW[_LengthConstraintBufferRW[P_ID].p0].ass += float3(0, 0.001, 0);
-    //_VertBufferRW[_LengthConstraintBufferRW[P_ID].p1].ass += float3(0, -0.001, 0);
-    //AtomicAddDeltaVector(_LengthConstraintBufferRW[P_ID].p0, float3(0, 0.001, 0));
-    //AtomicAddDeltaVector(_LengthConstraintBufferRW[P_ID].p1, float3(0,  0.001, 0));
+    const float k = _LengthConstraintBufferRW[P_ID].stiff == 1.0 ? 1.0 : 1.0 - pow(1.0 - _LengthConstraintBufferRW[P_ID].stiff, 1.0 / (_itr_count + 1));
 
     AtomicAddDeltaVector(_LengthConstraintBufferRW[P_ID].p0, - s0 * n01 * k);
     AtomicAddDeltaVector(_LengthConstraintBufferRW[P_ID].p1, + s1 * n01 * k);
@@ -271,6 +291,51 @@ void PBD_Itteration_B
 {
     const unsigned int P_ID = DTid.x;
     if (P_ID >= _BConstNum) return;
+    if (_BendConstraintBufferRW[P_ID].thr < 0) return;
+
+    const Vert v0 = _VertBufferRW[_BendConstraintBufferRW[P_ID].p0];
+    const Vert v1 = _VertBufferRW[_BendConstraintBufferRW[P_ID].p1];
+    const Vert v2 = _VertBufferRW[_BendConstraintBufferRW[P_ID].p2];
+    const Vert v3 = _VertBufferRW[_BendConstraintBufferRW[P_ID].p3];
+
+    const float3 p = (v0.ass + v1.ass) / 2;
+    const float3 n12 = normalize(cross(v2.ass - v0.ass, v1.ass - v0.ass));
+    const float3 n13 = normalize(cross(v1.ass - v0.ass, v3.ass - v0.ass));
+    const float3 neutral = normalize(n12 + n13);
+    //Debug.Log("nbend" + nbend);
+
+    const float L0 = length(v2.ass - p);
+    const float L1 = length(v3.ass - p);
+    const float3 c0 = (v2.ass + 2 * p + (p + L0 * neutral)) / 4;
+    const float3 c1 = (v3.ass + 2 * p + (p + L1 * neutral)) / 4;
+    //Debug.Log("c0" + c0 + ", c1" + c1);
+
+    const float wv0 = v0.w;
+    const float wv1 = v1.w;
+    const float wb0 = v2.w;
+    const float wb1 = v3.w;
+    const float wn = 0;
+
+    // 要、重心維持の検討
+    const float W0 = wv0 + wv1 + wb0 + wn;
+    const float W1 = wv0 + wv1 + wb1 + wn;
+    const float W = wv0 + wv1 + wb0 + wb1;
+
+    const float offset = _BendConstraintBufferRW[P_ID].offset;
+    const float offset0 = L0 * sqrt((1 + offset) / 2) * (2.0 / 4);
+    const float offset1 = L1 * sqrt((1 + offset) / 2) * (2.0 / 4);
+
+    const float k = _BendConstraintBufferRW[P_ID].stiff == 1.0 ? 1.0 : 1.0 - pow(1 - _BendConstraintBufferRW[P_ID].stiff, 1 / (_itr_count + 1));
+    const float3 Vc0 = W0 == 0 || length(p - c0) == 0 ? p * 0 : (2 / W0) * (p - c0) * (1 - offset0 / length(p - c0));
+    const float3 Vc1 = W1 == 0 || length(p - c1) == 0 ? p * 0 : (2 / W1) * (p - c1) * (1 - offset1 / length(p - c1));
+
+    if (W > 0)
+    {
+        AtomicAddDeltaVector(_BendConstraintBufferRW[P_ID].p0, -wv0 * (Vc0 + Vc1) * k * (W0 * W1 / (W * (W0 + W1))));
+        AtomicAddDeltaVector(_BendConstraintBufferRW[P_ID].p1, -wv1 * (Vc0 + Vc1) * k * (W0 * W1 / (W * (W0 + W1))));
+        AtomicAddDeltaVector(_BendConstraintBufferRW[P_ID].p2, wb0 * Vc0 * k * (W0 / W));
+        AtomicAddDeltaVector(_BendConstraintBufferRW[P_ID].p3, wb1 * Vc1 * k * (W1 / W));
+    }
 
 }
 
@@ -347,6 +412,7 @@ void SetVertices
 
     _VertexBufferRW[P_ID].pos = _VertBufferRW[P_ID].pos;
     _VertexBufferRW[P_ID].nor = _VertBufferRW[P_ID].nor;
+    _VertexBufferRW[P_ID].uv = _VertBufferRW[P_ID].uv;
 }
 
 
