@@ -2,6 +2,7 @@
 #pragma kernel InitVert
 #pragma kernel InitEdge
 #pragma kernel InitFace
+#pragma kernel ComputeCurvature
 #pragma kernel TestPBD
 #pragma kernel PBD_StartFrame
 #pragma kernel PBD_Itteration_L
@@ -54,6 +55,18 @@ struct Vert {
     float3 frc;
     float3 del;
     float2 uv;
+    float4 col;
+    
+    float Rust;
+    float Dust;
+    float Bond;
+    float LiftingForce;     // 可視化用
+    float BindingForce;     // liftingForceは合計，bindingForceは平均をとる
+    int Status;
+    float3 Direction;  // ひび割れの方向 (status == 1 のときに参照)
+    int OnEdge;
+    int Lowest;
+    float Thickness;
     int edge;     // HalfEdge
     float w;
 };
@@ -74,6 +87,7 @@ struct Vertex {
     float3 pos;
     float3 nor;
     float2 uv;
+    float4 col;
 };
 
 StructuredBuffer<float3> _PositionBuffer;
@@ -140,8 +154,11 @@ void InitVert
     _VertBufferRW[P_ID].w = 10 * 1000 * 1000;
 
     _VertBufferRW[P_ID].uv = _UVBuffer[P_ID];
+
+    _VertBufferRW[P_ID].col = float4(1, 1, 1, 1);
     
     if (_VertBufferRW[P_ID].pos0.y < 4) {
+        _VertBufferRW[P_ID].col = float4(0, 0, 1, 1);
         //_VertBufferRW[P_ID].frc += float3(0, _VertBufferRW[P_ID].pos0.y - 4, 0) * 0.01;
         //_VertBufferRW[P_ID].w = 1.0;
     }
@@ -197,6 +214,116 @@ void SetPair
             break;
         }
 	}
+}
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void ComputeCurvature
+(
+    uint3 DTid : SV_DispatchThreadID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _VertNum) return;
+
+    int home_e = _VertBufferRW[P_ID].edge;
+    int tmp_e = home_e;
+    uint count = 0;
+    float sum_l_a = 0;
+    float sum_angle = 0;
+    float sum_area = 0;
+    float3 sum_k = float3(0, 0, 0);
+    const float PI = 3.14159;
+
+    do {
+        // 反時計回り
+        if (_EdgeBufferRW[tmp_e].pair == -1) {
+            // モデルの縁に来たら時計回り
+            tmp_e = _EdgeBufferRW[home_e].prev;
+
+            while (_EdgeBufferRW[tmp_e].pair != -1) {
+               tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].prev;
+               count++;
+
+            }
+            count++; // 縁の分
+            break;
+        }
+        float3 v0 = _VertBufferRW[_EdgeBufferRW[tmp_e].vert].pos;
+        float3 v1 = _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert].pos;
+        float3 v2 = _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].vert].pos;
+        float3 v3 = _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].prev].vert].pos;
+        float3 n0 = normalize(cross(v1 - v0, v2 - v0));
+        float3 n1 = normalize(cross(v1 - v0, v3 - v0));
+        float cosA = dot(normalize(v0 - v2), normalize(v1 - v2));
+        float cosB = dot(normalize(v0 - v3), normalize(v1 - v3));
+        float cotA = sqrt(cosA * cosA / (1 - cosA * cosA)) * sign(cosA);
+        float cotB = sqrt(cosB * cosB / (1 - cosB * cosB)) * sign(cosB);
+        sum_k += (cotA + cotB) * (v1 - v0);
+
+        //if (true) { _VertBufferRW[P_ID].col = float4(1, 0, 0, 1); return; }
+        if (length(v1 - v0) == 0) { return; }
+        
+        sum_area += length(cross(v1 - v0, v2 - v0)) / 2;
+        float angle = acos(clamp(dot(n0, n1), -1, 1));
+        angle = dot(cross(v1 - v0, v2 - v0), v3 - v0) < 0 ? angle : 2 * PI - angle;
+        sum_angle += angle;
+        sum_l_a += length(v1 - v0) * angle;
+        tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].next;
+        count++;
+        
+    } while (tmp_e != home_e);
+    
+    //float val = (sum_angle / count) / (2 * PI);
+    //if (val > 0.5)
+    //    _VertBufferRW[P_ID].col = float4(0, 0, 1, 0) * (val - 0.5) * 16 + float4(0, 0, 0, 1);
+    //else
+    //    _VertBufferRW[P_ID].col = float4(1, 0, 0, 0) * (0.5 - val) * 16 + float4(0, 0, 0, 1);
+
+    //float V = (sum_l_a / 4) / (sum_area / 3) / (2 * PI) * 0.015;
+    //if (V > 0.5)
+    //    _VertBufferRW[P_ID].col = float4(0, 0, 1, 0) * (V - 0.5) * 8 + float4(0, 0, 0, 1);
+    //else
+    //    _VertBufferRW[P_ID].col = float4(1, 0, 0, 0) * (0.5 - V) * 8 + float4(0, 0, 0, 1);
+    
+    float K = sign(dot(sum_k, _VertBufferRW[P_ID].nor)) * (length(sum_k) / 4) / (sum_area / 3) / (2 * PI) * 1;
+    K = clamp(K, -1, 1);
+    if (K > 0)
+        _VertBufferRW[P_ID].col = float4(0, 0, 1, 0) * (K) * 1 + float4(0, 1, 0, 1) * (1 - K);
+    else
+        _VertBufferRW[P_ID].col = float4(1, 0, 0, 0) * (- K) * 1 + float4(0, 1, 0, 1) * (1 + K);
+}
+
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void SearchAroundVertex_Template
+(
+    uint3 DTid : SV_DispatchThreadID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    int home_e = _VertBufferRW[P_ID].edge;
+    int tmp_e = home_e;
+    uint count = 0;
+
+    do {
+        // 反時計回り
+        if (_EdgeBufferRW[tmp_e].pair == -1) {
+            // モデルの縁に来たら時計回り
+            tmp_e = _EdgeBufferRW[home_e].prev;
+
+            while (_EdgeBufferRW[tmp_e].pair != -1) {
+                tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].prev;
+                count++;
+
+                if (count > 100) break;
+            }
+            break;
+        }
+        tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].next;
+        count++;
+
+        if (count > 100) break;
+    } while (tmp_e != home_e);
+
+    _VertBufferRW[P_ID].col = float4(count * 0.1, count * 0.1, count * 0.1, 1);
 }
 [numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
 void TestPBD
@@ -413,6 +540,7 @@ void SetVertices
     _VertexBufferRW[P_ID].pos = _VertBufferRW[P_ID].pos;
     _VertexBufferRW[P_ID].nor = _VertBufferRW[P_ID].nor;
     _VertexBufferRW[P_ID].uv = _VertBufferRW[P_ID].uv;
+    _VertexBufferRW[P_ID].col = _VertBufferRW[P_ID].col;
 }
 
 

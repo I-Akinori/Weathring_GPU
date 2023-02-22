@@ -42,6 +42,19 @@ namespace Weathering_GPU
             public Vector3 Frc; // 力
             public Vector3 Del; // 変位
             public Vector2 uv;
+            public Color Col;
+
+            public float Rust;
+            public float Dust;
+            public float Bond;
+            public float LiftingForce;     // 可視化用
+            public float BindingForce;     // liftingForceは合計，bindingForceは平均をとる
+            public int Status;
+            public Vector3 Direction;  // ひび割れの方向 (status == 1 のときに参照)
+            public int OnEdge;
+            public int Lowest;
+            public float Thickness;
+           
             public int Edge;
             public float Weight;
         };
@@ -62,21 +75,27 @@ namespace Weathering_GPU
             public Vector3 Pos; // 位置
             public Vector3 Nor; // 法線
             public Vector2 UV;
+            public Vector4 Col;
         };
 
         VertexAttributeDescriptor[] layout = new[]
         {
+            // Position, Normal, Tangent, TexCoord ... の順番を守らないとバグる．しかもColorを使うとバグるのでTexCoordを使う必要があるとのこと
             new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3),
             new VertexAttributeDescriptor(VertexAttribute.Normal, VertexAttributeFormat.Float32, 3),
+            //new VertexAttributeDescriptor(VertexAttribute.Color, VertexAttributeFormat.Float32, 4), Colorは使えない
             new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 2),
+            new VertexAttributeDescriptor(VertexAttribute.TexCoord1, VertexAttributeFormat.Float32, 4),
         };
 
         int InitVert;
         int InitFace;
         int InitEdge;
         int SetPair;
+        int ComputeCurvature;
         int PBD_Itteration_L;
         int PBD_Itteration_B;
+        int ComputeCur;
         int TestPBD;
         int PBD_StartFrame;
         int PBD_Update_Pos;
@@ -109,6 +128,7 @@ namespace Weathering_GPU
             InitVert = CS.FindKernel("InitVert");
             InitFace = CS.FindKernel("InitFace");
             InitEdge = CS.FindKernel("InitEdge");
+            ComputeCurvature = CS.FindKernel("ComputeCurvature");
             PBD_Itteration_L = CS.FindKernel("PBD_Itteration_L");
             PBD_Itteration_B = CS.FindKernel("PBD_Itteration_B");
             TestPBD = CS.FindKernel("TestPBD");
@@ -177,6 +197,7 @@ namespace Weathering_GPU
             CS.SetBuffer(SearchVertices, "_DeltaPosAsInt", _deltaPosAsInt);
             CS.SetBuffer(PBD_StartFrame, "_DeltaPosAsInt", _deltaPosAsInt);
             CS.SetBuffer(PBD_Update_Ass, "_DeltaPosAsInt", _deltaPosAsInt);
+
             _deltaCount = new ComputeBuffer(num, Marshal.SizeOf(typeof(int)));
             CS.SetBuffer(PBD_Itteration_L, "_DeltaCount", _deltaCount);
             CS.SetBuffer(PBD_Itteration_B, "_DeltaCount", _deltaCount);
@@ -184,6 +205,9 @@ namespace Weathering_GPU
             CS.SetBuffer(PBD_StartFrame, "_DeltaCount", _deltaCount);
             CS.SetBuffer(PBD_Update_Ass, "_DeltaCount", _deltaCount);
 
+            threadGroupSize = Mathf.CeilToInt((float)num / SIMULATION_BLOCK_SIZE);
+            CS.SetBuffer(ComputeCurvature, "_VertBufferRW", _vertBuffer);
+            CS.SetBuffer(ComputeCurvature, "_EdgeBufferRW", _edgeBuffer);
             
         }
         void PBD_Simulation() {
@@ -341,8 +365,11 @@ namespace Weathering_GPU
         {
             int threadGroupSize;
 
-            PBD_Simulation();
-            
+            //PBD_Simulation();
+
+            threadGroupSize = Mathf.CeilToInt((float)filter.mesh.vertices.Length / SIMULATION_BLOCK_SIZE);
+            CS.Dispatch(ComputeCurvature, threadGroupSize, 1, 1);
+
             // 頂点単位の探索
             threadGroupSize = Mathf.CeilToInt((float)filter.mesh.vertices.Length / SIMULATION_BLOCK_SIZE);
             CS.SetBuffer(SearchVertices, "_VertBufferRW", _vertBuffer);
@@ -351,17 +378,6 @@ namespace Weathering_GPU
             CS.SetBuffer(SearchVertices, "_TriangleBufferRW", _triangleBuffer);
             //CS.Dispatch(SearchVertices, threadGroupSize, 1, 1); // ComputeShaderを実行
             
-            threadGroupSize = Mathf.CeilToInt((float)filter.mesh.vertices.Length / SIMULATION_BLOCK_SIZE);
-            CS.SetBuffer(PBD_StartFrame, "_VertBufferRW", _vertBuffer);
-            CS.Dispatch(PBD_StartFrame, threadGroupSize, 1, 1);
-
-            CS.Dispatch(SearchVertices, threadGroupSize, 1, 1); // ComputeShaderを実行
-
-            CS.SetBuffer(PBD_Update_Ass, "_VertBufferRW", _vertBuffer);
-            CS.Dispatch(PBD_Update_Ass, threadGroupSize, 1, 1);
-            CS.SetBuffer(PBD_Update_Pos, "_VertBufferRW", _vertBuffer);
-            CS.Dispatch(PBD_Update_Pos, threadGroupSize, 1, 1);
-
             var vertArr = new VertData[filter.mesh.vertexCount];
             _vertBuffer.GetData(vertArr);
 
@@ -383,9 +399,27 @@ namespace Weathering_GPU
             CS.Dispatch(SetVertices, threadGroupSize, 1, 1); // ComputeShaderを実行
             var vertexArr = new VertexData[filter.mesh.vertices.Length];
             _vertexBuffer.GetData(vertexArr);
+            //UnityEngine.Debug.Log(vertexArr[100].UV);
+            //UnityEngine.Debug.Log(vertexArr[100].Col);
 
-            filter.mesh.SetVertexBufferParams(filter.mesh.vertices.Length, layout);
-            filter.mesh.SetVertexBufferData(vertexArr, 0, 0, filter.mesh.vertices.Length);
+            //filter.mesh.SetVertexBufferParams(filter.mesh.vertices.Length, layout);
+            //filter.mesh.SetVertexBufferData(vertexArr, 0, 0, filter.mesh.vertices.Length);
+            var posArr = new Vector3[vertexArr.Length];
+            var norArr = new Vector3[vertexArr.Length];
+            var colArr = new Color[vertexArr.Length];
+            var uvArr = new Vector2[vertexArr.Length];
+
+            for (int i = 0; i < vertexArr.Length; i++) {
+                posArr[i] = vertexArr[i].Pos;
+                norArr[i] = vertexArr[i].Nor;
+                colArr[i] = vertexArr[i].Col;
+                uvArr[i] = vertexArr[i].UV;
+            }
+            //UnityEngine.Debug.Log(posArr[100]);
+            filter.mesh.vertices = posArr;
+            filter.mesh.normals = norArr;
+            filter.mesh.colors = colArr;
+            filter.mesh.uv = uvArr;
             filter.mesh.RecalculateNormals();
             filter.mesh.RecalculateBounds();
             
@@ -416,10 +450,10 @@ namespace Weathering_GPU
                     continue;
                 }
                 //Random.InitState(i);
-                var c = Color.HSVToRGB(0.66f - Mathf.Abs(constArr[i].Offset) * 3.5f, 1, 1);
+                //var c = Color.HSVToRGB(0.66f - Mathf.Abs(constArr[i].Offset) * 3.5f, 1, 1);
                 //UnityEngine.Debug.Log(constArr[i].Offset);
 
-                UnityEngine.Debug.DrawLine(vertexArr[constArr[i].P0].Pos, vertexArr[constArr[i].P1].Pos, c);
+                //UnityEngine.Debug.DrawLine(vertexArr[constArr[i].P0].Pos, vertexArr[constArr[i].P1].Pos, c);
                 //UnityEngine.Debug.DrawLine(vertexArr[constArr[i].P2].Pos, vertexArr[constArr[i].P3].Pos, c);
             }
 
