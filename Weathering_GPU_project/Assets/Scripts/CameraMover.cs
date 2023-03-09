@@ -181,7 +181,7 @@ public class CameraMover : MonoBehaviour
 
         // カメラの前後移動処理
         //（カメラが向いている方向 forward に変数 scroll と speed を乗算して加算する）
-        Camera.main.transform.position += transform.forward * scroll * speed;
+        this.gameObject.transform.position += transform.forward * scroll * speed;
     }
 
     //UIメッセージの表示

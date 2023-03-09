@@ -9,6 +9,8 @@ Shader "Custom/vertex_color"
     }
         SubShader
         {
+            Cull Off
+
             Tags { "RenderType" = "Opaque" }
             LOD 200
 
@@ -24,7 +26,7 @@ Shader "Custom/vertex_color"
             struct Input
             {
                 float2 uv_MainTex;
-        float4 vertColor; // í«â¡
+                float4 vertColor; // í«â¡
             };
 
             void vert(inout appdata_full v, out Input o) {  // vert()Çí«â¡
@@ -47,11 +49,14 @@ Shader "Custom/vertex_color"
             {
                 // Albedo comes from a texture tinted by color
                 fixed4 c = tex2D(_MainTex, IN.uv_MainTex) * _Color;
-                o.Albedo = c.rgb * IN.vertColor.rgb; // ïœçX
-
-        // Metallic and smoothness come from slider variables
-                o.Metallic = _Metallic;
-                o.Smoothness = _Glossiness;
+                
+                float dust = IN.vertColor.g;
+                dust = 0;
+                o.Albedo = c.rgb * (1 - dust); // ïœçX
+                o.Albedo = c.rgb * IN.vertColor.rgb;
+                // Metallic and smoothness come from slider variables
+                o.Metallic = _Metallic * (1 - dust);
+                o.Smoothness = _Glossiness * (1 - dust);
                 o.Alpha = c.a;
             }
             ENDCG
