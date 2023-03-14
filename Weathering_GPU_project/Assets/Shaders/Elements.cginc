@@ -30,10 +30,11 @@ struct Vert {
     float cur;
 
     float rust;
+    float rust_buf;
     float dust;
+    float chalk;
     float bond;
     float liftingForce;     // 可視化用
-    float bindingForce;     // liftingForceは合計，bindingForceは平均をとる
     uint stat;
     float3 direction;  // ひび割れの方向 (status == 1 のときに参照)
     int onEdge;

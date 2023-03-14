@@ -42,7 +42,7 @@ static int p[512] = { 151,160,137,91,90,15,
 	49,192,214, 31,181,199,106,157,184, 84,204,176,115,121,50,45,127, 4,150,254,
 	138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180,
 };
-int inc(int num) {
+uint inc(uint num) {
 	num++;
 	num %= 256;
 
@@ -83,17 +83,17 @@ float perlin(float x, float y, float z) {
 	y = (y + 256) % 256;
 	z = (z + 256) % 256;
 
-	int xi = (int)x & 255;								// Calculate the "unit cube" that the point asked will be located in
-	int yi = (int)y & 255;								// The left bound is ( |_x_|,|_y_|,|_z_| ) and the right bound is that
-	int zi = (int)z & 255;								// plus 1.  Next we calculate the location (from 0.0 to 1.0) in that cube.
-	float xf = x - (int)x;								// We also fade the location to smooth the result.
-	float yf = y - (int)y;
-	float zf = z - (int)z;
+	uint xi = (uint)x & 255;								// Calculate the "unit cube" that the point asked will be located in
+	uint yi = (uint)y & 255;								// The left bound is ( |_x_|,|_y_|,|_z_| ) and the right bound is that
+	uint zi = (uint)z & 255;								// plus 1.  Next we calculate the location (from 0.0 to 1.0) in that cube.
+	float xf = x - (uint)x;								// We also fade the location to smooth the result.
+	float yf = y - (uint)y;
+	float zf = z - (uint)z;
 	float u = fade(xf);
 	float v = fade(yf);
 	float w = fade(zf);
 
-	int aaa, aba, aab, abb, baa, bba, bab, bbb;
+	uint aaa, aba, aab, abb, baa, bba, bab, bbb;
 	aaa = p[p[p[xi] + yi] + zi];
 	aba = p[p[p[xi] + inc(yi)] + zi];
 	aab = p[p[p[xi] + yi] + inc(zi)];

@@ -14,9 +14,14 @@ float _delta_time;
 uint _itr_count;
 float length_ratio;
 float4 _gravity;
+float4 _hit_point;
+uint _control_separation;   // 0: none, 1: weathering, 2: de-weathering
+uint _control_tear;   // 0: none, 1: weathering, 2: de-weathering 
 
 StructuredBuffer<float3> _PositionBuffer;
 StructuredBuffer<float3> _NormalBuffer;
+RWStructuredBuffer<float3> _BasePositionBuffer;
+RWStructuredBuffer<float3> _BaseNormalBuffer;
 StructuredBuffer<float2> _UVBuffer;
 RWStructuredBuffer<Vert> _VertBufferRW;
 RWStructuredBuffer<Edge> _EdgeBufferRW;
@@ -33,6 +38,26 @@ RWStructuredBuffer<uint> _LockProcess; // 0: tear
 RWStructuredBuffer<uint> _VertCounter; // カーネル実行中の変更を許す頂点カウンタ
 
 // helper function for atomic add
+float FlowRust(int source, int target, int path, float3 projected_grav) {
+    Vert VS = _VertBufferRW[source];
+    Vert VT = _VertBufferRW[target];
+    float rust_thr = 0.1;
+    float rust_thr2 = 0.45;
+    float rust_ratio = 0.1;
+    float val = 0;
+    if (VS.rust >= 10.0 && VS.onEdge == 0) {
+        if (VS.rust < 100 || VS.lowest == 1) {
+            float product = dot(normalize(VT.pos - VS.pos), projected_grav)
+                / (1.0 + exp(-_EdgeBufferRW[path].angle)); // 曲率効果: 溝ほど流れやすい
+            if (product > rust_thr) {
+                val = product - rust_thr;
+                if (product < rust_thr2)
+                    val *= rust_ratio;
+            }
+        }
+    }
+    return val * _delta_time * 0.05;
+}
 void AtomicAddDelta(int indexIntoDeltaPos, float newDeltaVal, int axis) {
     uint i_val = asuint(newDeltaVal);
     uint tmp0 = 0;
@@ -94,6 +119,7 @@ void CloneVert(int source, int target) {
     _VertBufferRW[target].dust = _VertBufferRW[source].dust;
     _VertBufferRW[target].rust = _VertBufferRW[source].rust;
     _VertBufferRW[target].bond = _VertBufferRW[source].bond;
+    _VertBufferRW[target].onEdge = _VertBufferRW[source].onEdge;
     _VertBufferRW[target].stat = _VertBufferRW[source].stat;
     _VertBufferRW[target].uv = _VertBufferRW[source].uv;
     _VertBufferRW[target].col = _VertBufferRW[source].col;
@@ -131,9 +157,12 @@ void InitVert
     _VertBufferRW[P_ID].del = float3(0, 0, 0);
     _VertBufferRW[P_ID].w = 0;
 
+    _VertBufferRW[P_ID].frc = float3(0, 0, 0);
     _VertBufferRW[P_ID].dust = 0;
     _VertBufferRW[P_ID].rust = 0;
+    _VertBufferRW[P_ID].rust_buf = 0;
     _VertBufferRW[P_ID].bond = OctavePerlin(_VertBufferRW[P_ID].pos * 1 + float3(100, 200, 300), 5, 0.5) * 400 - 100;
+    _VertBufferRW[P_ID].onEdge = 0;
     _VertBufferRW[P_ID].stat = 0;
 
     _VertBufferRW[P_ID].uv = _UVBuffer[P_ID];
@@ -175,7 +204,7 @@ void InitEdge
         mid_p *= 0.5;
 
         float rand = frac(sin(dot(mid_p, float3(12.9898, 78.233, 43.622))) * 43758.5453);
-        _EdgeBufferRW[P_ID * 3 + j].bindingForce = (OctavePerlin(mid_p) * 500 + 800) * (rand < 0.002 ? 0.01 : 1.0);
+        _EdgeBufferRW[P_ID * 3 + j].bindingForce = (OctavePerlin(mid_p, 5, 0.5) * 500 + 500) * (rand < 0.001 ? 0.01 : 1.0);
     }
 }
 
@@ -216,8 +245,21 @@ void SetPair
             break;
         }
 	}
+    if (_EdgeBufferRW[P_ID].pair == -1)
+        _VertBufferRW[_EdgeBufferRW[P_ID].vert].onEdge = 1;
 }
+#pragma kernel SetBase
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void SetBase
+(
+    uint3 DTid : SV_DispatchThreadID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _VertNum) return;
 
+    _BasePositionBuffer[P_ID] -= _BaseNormalBuffer[P_ID] * 0.01;
+}
 #pragma kernel ComputeVertCurvature
 [numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
 void ComputeVertCurvature
@@ -240,7 +282,6 @@ void ComputeVertCurvature
     do {
         // 反時計回り
         if (_EdgeBufferRW[tmp_e].pair == -1) {
-            _VertBufferRW[P_ID].col = float4(0, 1, 0, 1);
             return;
             // モデルの縁に来たら時計回り
             tmp_e = _EdgeBufferRW[home_e].prev;
@@ -292,10 +333,10 @@ void ComputeVertCurvature
     //    _VertBufferRW[P_ID].col = float4(1, 0, 0, 0) * (0.5 - V) * 8 + float4(0, 0, 0, 1);
     
     float K = sign(dot(sum_k, _VertBufferRW[P_ID].nor)) * (length(sum_k) / 4) / (sum_area / 3) / (2 * PI);
-    if (K > 0)
-        _VertBufferRW[P_ID].col = float4(0, 0, 1, 1) * (K) + float4(0, 1, 0, 1) * (1 - K);
-    else
-        _VertBufferRW[P_ID].col = float4(1, 0, 0, 1) * (- K) + float4(0, 1, 0, 1) * (1 + K);
+    //if (K > 0)
+    //    _VertBufferRW[P_ID].col = float4(0, 0, 1, 1) * (K) + float4(0, 1, 0, 1) * (1 - K);
+    //else
+    //    _VertBufferRW[P_ID].col = float4(1, 0, 0, 1) * (- K) + float4(0, 1, 0, 1) * (1 + K);
     _VertBufferRW[P_ID].cur = sign(dot(sum_k, _VertBufferRW[P_ID].nor)) * (length(sum_k) / 4) / (sum_area / 3);
 }
 #pragma kernel ComputeEdgeCurvature
@@ -309,7 +350,7 @@ void ComputeEdgeCurvature
     if (P_ID >= _EdgeNum) return;
 
     const float PI = 3.14159;
-    if (_EdgeBufferRW[P_ID].pair == -1) {
+    if (_EdgeBufferRW[P_ID].pair == -1 || _EdgeBufferRW[P_ID].stat == 1) {
         _EdgeBufferRW[P_ID].angle = 0;
         return;
     }
@@ -342,13 +383,24 @@ void AccumulateDust
     int tmp_e = home_e;
     const float PI = 3.14159;
     
-    float w = 0.001;
+    float w = 0.0002;
     float w_normal = 4.0;
     float w_curvat = 1.0;
     
     _VertBufferRW[P_ID].dust += w * (1.0 + w_normal / (1.0 + exp(10 * asin(dot(_VertBufferRW[P_ID].nor, float3(0, -1, 0)))) ) + w_curvat / (1.0 + exp(-_VertBufferRW[P_ID].cur))) * _delta_time;
-    float k = 1.0 - exp(- _VertBufferRW[P_ID].dust);
-    //_VertBufferRW[P_ID].col.y = k;
+    
+}
+#pragma kernel SetRustBuffer
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void SetRustBuffer
+(
+    uint3 DTid : SV_DispatchThreadID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _VertNum) return;
+
+    _VertBufferRW[P_ID].rust_buf = min(_VertBufferRW[P_ID].rust, 100);
 }
 #pragma kernel PropagateRust
 [numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
@@ -363,6 +415,39 @@ void PropagateRust
     int home_e = _VertBufferRW[P_ID].edge;
     int tmp_e = home_e;
     const float PI = 3.14159;
+    // 最大流れ方向
+    float3 projected_grav = normalize(_gravity.xyz - dot(_VertBufferRW[P_ID].nor, _gravity.xyz) * _VertBufferRW[P_ID].nor);
+
+    do {
+        // 反時計回り: tmp_eは頂点から出る方向
+        // 反時計回り処理: すべてのtmp_e
+        _VertBufferRW[P_ID].rust +=
+            FlowRust(_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert, P_ID, tmp_e, projected_grav) * 
+            _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert].rust_buf;
+
+        if (_EdgeBufferRW[tmp_e].stat == 1 || _EdgeBufferRW[tmp_e].pair == -1) {
+            // 反時計回処理: 断裂したtmp_e
+            // モデルの縁に来た
+            tmp_e = _EdgeBufferRW[home_e].prev;
+            while (_EdgeBufferRW[tmp_e].stat != 1 && _EdgeBufferRW[tmp_e].pair != -1) {
+                _VertBufferRW[P_ID].rust +=
+                    FlowRust(_EdgeBufferRW[tmp_e].vert, P_ID, tmp_e, projected_grav) *
+                    _VertBufferRW[_EdgeBufferRW[tmp_e].vert].rust_buf;
+
+                tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].prev;
+
+            }
+            // 時計回り処理: 断裂したtmp_e
+            _VertBufferRW[P_ID].rust +=
+                FlowRust(_EdgeBufferRW[tmp_e].vert, P_ID, tmp_e, projected_grav) *
+                _VertBufferRW[_EdgeBufferRW[tmp_e].vert].rust_buf;
+            break;
+        }
+        // 反時計回り処理: 断裂したtmp_e 
+
+        tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].next;
+    } while (tmp_e != home_e);
+
 }
 
 #pragma kernel SearchAroundVertex_Template
@@ -423,7 +508,7 @@ void TestPBD
         _LengthConstraintBufferRW[P_ID].p0 = _EdgeBufferRW[P_ID].vert;
         _LengthConstraintBufferRW[P_ID].p1 = _EdgeBufferRW[_EdgeBufferRW[P_ID].next].vert;
         _LengthConstraintBufferRW[P_ID].stiff = 1;
-        _LengthConstraintBufferRW[P_ID].offset = length(_VertBufferRW[_LengthConstraintBufferRW[P_ID].p0].pos - _VertBufferRW[_LengthConstraintBufferRW[P_ID].p1].pos) * 0.95;
+        _LengthConstraintBufferRW[P_ID].offset = length(_VertBufferRW[_LengthConstraintBufferRW[P_ID].p0].pos - _VertBufferRW[_LengthConstraintBufferRW[P_ID].p1].pos) * 0.98;
         _LengthConstraintBufferRW[P_ID].thr = 0.001;
     }
     else {
@@ -435,8 +520,8 @@ void TestPBD
         _BendConstraintBufferRW[P_ID].p1 = _EdgeBufferRW[P_ID].vert; 
         _BendConstraintBufferRW[P_ID].p2 = _EdgeBufferRW[_EdgeBufferRW[P_ID].prev].vert;
         _BendConstraintBufferRW[P_ID].p3 = _EdgeBufferRW[_EdgeBufferRW[_EdgeBufferRW[P_ID].pair].prev].vert;
-        _BendConstraintBufferRW[P_ID].stiff = 0.5;
-        _BendConstraintBufferRW[P_ID].offset = 0.15;// *abs(dot(normalize(_VertBufferRW[_BendConstraintBufferRW[P_ID].p0].pos - _VertBufferRW[_BendConstraintBufferRW[P_ID].p1].pos), float3(1, 0, 0)));
+        _BendConstraintBufferRW[P_ID].stiff = 0.95;
+        _BendConstraintBufferRW[P_ID].offset = sin(_EdgeBufferRW[P_ID].angle) + 0.25;// *abs(dot(normalize(_VertBufferRW[_BendConstraintBufferRW[P_ID].p0].pos - _VertBufferRW[_BendConstraintBufferRW[P_ID].p1].pos), float3(1, 0, 0)));
         _BendConstraintBufferRW[P_ID].thr = 0.001;
     }
     else {
@@ -580,8 +665,8 @@ void PBD_Update_Ass
         float dz = asfloat(_DeltaPosAsInt[P_ID].z);
         _VertBufferRW[P_ID].del = float3(dx, dy, dz) / _DeltaCount[P_ID];
     }
-    
-    _VertBufferRW[P_ID].ass += _VertBufferRW[P_ID].del;
+    if (dot(_VertBufferRW[P_ID].ass + _VertBufferRW[P_ID].del - _VertBufferRW[P_ID].pos0, _VertBufferRW[P_ID].nor0) > 0)
+        _VertBufferRW[P_ID].ass += _VertBufferRW[P_ID].del;
     _VertBufferRW[P_ID].del = float3(0, 0, 0);
     _DeltaPosAsInt[P_ID] = uint3(0, 0, 0);
 }
@@ -667,7 +752,163 @@ void SetVertices
     _VertexBufferRW[P_ID].uv = _VertBufferRW[P_ID].uv;
     _VertexBufferRW[P_ID].col = _VertBufferRW[P_ID].col;
 }
+#pragma kernel SetVertColor_Normal
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void SetVertColor_Normal
+(
+    uint3 DTid : SV_DispatchThreadID // スレッド全体で固有のID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _VertNum) return;
 
+    _VertBufferRW[P_ID].col.x = min(_VertBufferRW[P_ID].rust / 100, 1);
+    _VertBufferRW[P_ID].col.y = 1.0 - exp(-_VertBufferRW[P_ID].dust);
+}
+#pragma kernel SetVertColor_Separate
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void SetVertColor_Separate
+(
+    uint3 DTid : SV_DispatchThreadID // スレッド全体で固有のID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _VertNum) return;
+
+    float val = (_VertBufferRW[P_ID].bond - _VertBufferRW[P_ID].liftingForce);
+    val = min(max(val / 100, 0), 1);
+    float r = 0;
+    float g = 0;
+    float b = 0;
+    if (val > 0.75)
+    {
+        r = 0; g = (1 - val) * 4; b = 1;
+    }
+    else if (val > 0.50)
+    {
+        r = 0; g = 1; b = (val - 0.5) * 4;
+    }
+    else if (val > 0.25) 
+    {
+        r = (0.5 - val) * 4; g = 1; b = 0;
+    }
+    else {
+        r = 1; g = val * 4; b = 0;
+    }
+    _VertBufferRW[P_ID].col = float4(r, g, b, 1);
+}
+#pragma kernel SetVertColor_Tear
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void SetVertColor_Tear
+(
+    uint3 DTid : SV_DispatchThreadID // スレッド全体で固有のID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _VertNum) return;
+
+    int home_e = _VertBufferRW[P_ID].edge;
+    int tmp_e = home_e;
+    uint count = 0;
+
+    float val = 0;
+
+    // 頂点単位の断裂しやすさ：可視化用のためだけの計算なので、必要なときにしかは計算しない
+    do {
+        // 反時計回り: tmp_eは頂点から出る方向
+        // 反時計回り処理: すべてのtmp_e
+
+        if (_EdgeBufferRW[tmp_e].pair == -1 || _EdgeBufferRW[tmp_e].stat == 1) {
+            // 反時計回処理: ペア存在しないtmp_e
+            // モデルの縁に来た
+
+            tmp_e = _EdgeBufferRW[home_e].prev;
+            while (_EdgeBufferRW[tmp_e].pair != -1 && _EdgeBufferRW[tmp_e].stat != 1) {
+                // 時計回り: tmp_eは頂点に向かう方向
+                // 時計回り処理: すべてのtmp_e
+                tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].prev;
+                val += _EdgeBufferRW[tmp_e].bindingForce - _FaceBufferRW[_EdgeBufferRW[tmp_e].face].contraction;
+                val += _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].bindingForce
+                        - _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].face].contraction;
+                if (_VertBufferRW[_EdgeBufferRW[tmp_e].vert].stat == 2) {
+                    float3 ed = _VertBufferRW[P_ID].pos - _VertBufferRW[_EdgeBufferRW[tmp_e].vert].pos;
+                    float rad = length(ed);
+                    ed /= rad;
+                    float cos = dot(_VertBufferRW[_EdgeBufferRW[tmp_e].vert].direction, ed);
+                    float sin = sqrt(1 - cos * cos);
+                    float cos1h = sqrt((1 + cos) / 2);
+                    float sin1h = sqrt((1 - cos) / 2);
+                    float sin3h = 3 * sin1h - 4 * sin1h * sin1h * sin1h;
+                    float cos3h = 4 * cos1h * cos1h * cos1h - 3 * cos1h;
+                    float sx = cos1h * (1 - sin1h * sin3h);
+                    float sy = cos1h * (1 + sin1h * sin3h);
+                    float sxy = cos1h * sin1h * cos3h;
+                    sx /= sqrt(rad);
+                    sy /= sqrt(rad);
+                    sxy /= sqrt(rad);
+                    float s = sy * cos * cos + sx * sin * sin - 2 * sxy * cos * sin;
+                    val -= s * 200;
+                }
+                count++;
+            }
+            // 時計回り処理: ペアが存在しないtmp_e
+            break;
+        }
+        // 反時計回り処理: ペアが存在しているtmp_e 
+        val += _EdgeBufferRW[tmp_e].bindingForce - _FaceBufferRW[_EdgeBufferRW[tmp_e].face].contraction;
+        val += _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].bindingForce
+                - _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].face].contraction;
+
+        if (_VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].vert].stat == 2) {
+            float3 ed = _VertBufferRW[P_ID].pos - _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].vert].pos;
+            float rad = length(ed);
+            ed /= rad;
+            float cos = dot(_VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].vert].direction, ed);
+            float sin = sqrt(1 - cos * cos);
+            float cos1h = sqrt((1 + cos) / 2);
+            float sin1h = sqrt((1 - cos) / 2);
+            float sin3h = 3 * sin1h - 4 * sin1h * sin1h * sin1h;
+            float cos3h = 4 * cos1h * cos1h * cos1h - 3 * cos1h;
+            float sx = cos1h * (1 - sin1h * sin3h);
+            float sy = cos1h * (1 + sin1h * sin3h);
+            float sxy = cos1h * sin1h * cos3h;
+            sx /= sqrt(rad);
+            sy /= sqrt(rad);
+            sxy /= sqrt(rad);
+            float s = sy * cos * cos + sx * sin * sin - 2 * sxy * cos * sin;
+            val -= s * 200;
+        }
+        count++;
+
+        tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].next;
+    } while (tmp_e != home_e);
+    //if (tmp_e == home_e) count--;
+
+    //val = log(1 + (val / count) / 10) * 1;
+    val *= 0.0004 / count;
+    val = min(max(val, 0), 1);
+    float r = 0;
+    float g = 0;
+    float b = 0;
+    if (val > 0.75)
+    {
+        r = 0; g = (1 - val) * 4; b = 1;
+    }
+    else if (val > 0.50)
+    {
+        r = 0; g = 1; b = (val - 0.5) * 4;
+    }
+    else if (val > 0.25)
+    {
+        r = (0.5 - val) * 4; g = 1; b = 0;
+    }
+    else {
+        r = 1; g = val * 4; b = 0;
+    }
+    _VertBufferRW[P_ID].col = float4(r, g, b, 1);
+
+    _VertBufferRW[P_ID].col = _VertBufferRW[P_ID].col;
+}
 #pragma kernel SetTriangles
 [numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
 void SetTriangles
@@ -704,7 +945,6 @@ void SetVertForces
     if (P_ID >= _VertNum) return;
 
     _VertBufferRW[P_ID].liftingForce = 0;
-    _VertBufferRW[P_ID].bindingForce = 0;
     _LiftingForceCount[P_ID] = 0;
     _LiftingForceAsInt[P_ID] = 0;
 }
@@ -723,8 +963,11 @@ void UpdateLiftingForce
 
     Edge hei = _EdgeBufferRW[P_ID];
     
-    _EdgeBufferRW[P_ID].liftingForce = 1.0 * lifting_force_ratio * _FaceBufferRW[hei.face].contraction / (1 + exp(- 2 * hei.angle));
-    AtomicAddLiftingForce(_EdgeBufferRW[_EdgeBufferRW[P_ID].prev].vert, _EdgeBufferRW[P_ID].liftingForce);
+    _EdgeBufferRW[P_ID].liftingForce = 1.0 * lifting_force_ratio * _FaceBufferRW[hei.face].contraction / (1 + exp(- 4 * hei.angle));
+    
+    // Edgeの探索からVert.liftingForceにアクセスするにはAtomic演算が必要になるので
+    // UpdateVertForcesからVertの周りをぐるっと探索する方式に変更した
+    //AtomicAddLiftingForce(_EdgeBufferRW[_EdgeBufferRW[P_ID].prev].vert, _EdgeBufferRW[P_ID].liftingForce);
 
     if (_BendConstraintBufferRW[P_ID].thr >= 0) {
         //_BendConstraintBufferRW[P_ID].offset += (0.3 - _BendConstraintBufferRW[P_ID].offset) * 0.005f * hei.liftingForce * _delta_time;
@@ -742,6 +985,45 @@ void UpdateVertForces
 
     _VertBufferRW[P_ID].liftingForce = asfloat(_LiftingForceAsInt[P_ID]);
     
+    // 対話的操作
+    if (_control_separation == 1 && length(_VertBufferRW[P_ID].pos - _hit_point.xyz) < _hit_point.w)
+        _VertBufferRW[P_ID].bond -= _VertBufferRW[P_ID].bond * 0.05;
+    if (_control_separation == 2 && length(_VertBufferRW[P_ID].pos - _hit_point.xyz) < _hit_point.w)
+        _VertBufferRW[P_ID].bond += (_VertBufferRW[P_ID].liftingForce + 200 - _VertBufferRW[P_ID].bond) * 0.05;
+    
+    int home_e = _VertBufferRW[P_ID].edge;
+    int tmp_e = home_e;
+    uint count = 0;
+    _VertBufferRW[P_ID].liftingForce = 0;
+
+    do {
+        // 反時計回り: tmp_eは頂点から出る方向
+        // 反時計回り処理: すべてのtmp_e
+        _VertBufferRW[P_ID].liftingForce += _EdgeBufferRW[_EdgeBufferRW[tmp_e].next].liftingForce;
+
+        if (_EdgeBufferRW[tmp_e].pair == -1 || _EdgeBufferRW[tmp_e].stat == 1) {
+            // 反時計回処理: ペア存在しないtmp_e
+            // モデルの縁に来た
+            tmp_e = _EdgeBufferRW[home_e].prev;
+            while (_EdgeBufferRW[tmp_e].pair != -1 && _EdgeBufferRW[tmp_e].stat != 1) {
+                // 時計回り: tmp_eは頂点に向かう方向
+                // 時計回り処理: すべてのtmp_e
+                tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].prev;
+                _VertBufferRW[P_ID].liftingForce += _EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].liftingForce;
+                count++;
+                if (count > 100) break;
+            }
+            // 時計回り処理: ペアが存在しないtmp_e
+            break;
+        }
+        // 反時計回り処理: ペアが存在しているtmp_e 
+
+        tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].next;
+        count++;
+
+        if (count > 100) break;
+    } while (tmp_e != home_e);
+
     float v = _VertBufferRW[P_ID].liftingForce / 64;
     //if (v < 0.5)
     //    _VertBufferRW[P_ID].col = float4(0, 0, 1 - v * 2, 1);
@@ -764,6 +1046,22 @@ void UpdateBindingForce
     int ei = _FaceBufferRW[P_ID].edge;
     int ep = _EdgeBufferRW[_FaceBufferRW[P_ID].edge].prev;
     int en = _EdgeBufferRW[_FaceBufferRW[P_ID].edge].next;
+
+    float r = 0.05;
+    float maxval = 2000;
+    // 対話的操作
+    if (_control_tear == 1 && length(_VertBufferRW[_EdgeBufferRW[ei].vert].pos - _hit_point.xyz) < _hit_point.w)
+        _EdgeBufferRW[ei].bindingForce -= _EdgeBufferRW[ei].bindingForce * r;
+    if (_control_tear == 2 && length(_VertBufferRW[_EdgeBufferRW[ei].vert].pos - _hit_point.xyz) < _hit_point.w)
+        _EdgeBufferRW[ei].bindingForce += (maxval - _EdgeBufferRW[ei].bindingForce) * r;
+    if (_control_tear == 1 && length(_VertBufferRW[_EdgeBufferRW[ep].vert].pos - _hit_point.xyz) < _hit_point.w)
+        _EdgeBufferRW[ep].bindingForce -= _EdgeBufferRW[ep].bindingForce * r;
+    if (_control_tear == 2 && length(_VertBufferRW[_EdgeBufferRW[ep].vert].pos - _hit_point.xyz) < _hit_point.w)
+        _EdgeBufferRW[ep].bindingForce += (maxval - _EdgeBufferRW[ep].bindingForce) * r;
+    if (_control_tear == 1 && length(_VertBufferRW[_EdgeBufferRW[en].vert].pos - _hit_point.xyz) < _hit_point.w)
+        _EdgeBufferRW[en].bindingForce -= _EdgeBufferRW[en].bindingForce * r;
+    if (_control_tear == 2 && length(_VertBufferRW[_EdgeBufferRW[en].vert].pos - _hit_point.xyz) < _hit_point.w)
+        _EdgeBufferRW[en].bindingForce += (maxval - _EdgeBufferRW[en].bindingForce) * r;
 
     if (_EdgeBufferRW[ei].stat == 0) {
         if (_EdgeBufferRW[ep].stat == 0) {
@@ -810,7 +1108,7 @@ void UpdateBindingForce
             }
         }
     }
-    _FaceBufferRW[P_ID].contraction += 1 * _delta_time;
+    _FaceBufferRW[P_ID].contraction += 0.5 * _delta_time;
 }
 
 #pragma kernel SeparateVertex
@@ -831,23 +1129,25 @@ void SeparateVertex
     //    _VertBufferRW[11].stat += 1;
 
     //_VertBufferRW[P_ID].col = float4(0, 0, (vi.bond - vi.liftingForce) / 100, 1);
-    _VertBufferRW[P_ID].col = float4(1, 1, 1, 1);
+    //_VertBufferRW[P_ID].col = float4(1, 1, 1, 1);
     //if (vi.stat == 1) _VertBufferRW[P_ID].col = float4(1, 1, 0, 1);
     //if (vi.stat == 2) _VertBufferRW[P_ID].col = float4(1, 0, 0, 1);
     //if (vi.stat == 3) _VertBufferRW[P_ID].col = float4(0, 1, 0, 1);
     //if (vi.stat > 3) _VertBufferRW[P_ID].col = float4(0, 0, 1, 1);
-    //_VertBufferRW[P_ID].col = float4(1, 1, 1, 0) * (1.0 - exp(-_VertBufferRW[P_ID].dust)) + float4(0, 0, 0, 0);
+    //_VertBufferRW[P_ID].col = float4(1, 1, 1, 0) * exp(-_VertBufferRW[P_ID].dust) + float4(0, 0, 0, 1);
 
     if (vi.stat > 0) {
         return;
     }
-    _VertBufferRW[P_ID].bond += - 1.0 * _delta_time;
+    _VertBufferRW[P_ID].bond += - 0.25 * _delta_time;
 
     if (vi.bond > vi.liftingForce)  return;
 
     // 分離処理
     _VertBufferRW[P_ID].stat = 1;
-    _VertBufferRW[P_ID].w = 1.0;
+
+    if (_VertBufferRW[P_ID].onEdge == 0)
+        _VertBufferRW[P_ID].w = 1.0;
     
     int home_e = vi.edge;
     int tmp_e = home_e;
@@ -894,7 +1194,7 @@ void TearEdge
 
     if (P_ID >= _EdgeNum) return;
     if (_EdgeBufferRW[P_ID].pair == -1) return;
-    if (P_ID > _EdgeBufferRW[P_ID].pair) return;     // 片方のエッジだけの処理
+    if ((int)P_ID > _EdgeBufferRW[P_ID].pair) return;     // 片方のエッジだけの処理
 
     Edge ei = _EdgeBufferRW[P_ID];
     Edge ep = _EdgeBufferRW[ei.pair];
@@ -945,11 +1245,14 @@ void TearEdge
         float cos1h = sqrt((1 + cos) / 2);
         float sin1h = sqrt((1 - cos) / 2);
         float sin3h = 3 * sin1h - 4 * sin1h * sin1h * sin1h;
-        float sx = cos1h - (1 + sin1h * sin3h);
-        float sy = cos1h + (1 + sin1h * sin3h);
+        float cos3h = 4 * cos1h * cos1h * cos1h - 3 * cos1h;
+        float sx = cos1h * (1 - sin1h * sin3h);
+        float sy = cos1h * (1 + sin1h * sin3h);
+        float sxy = cos1h * sin1h * cos3h;
         sx /= sqrt(rad);
         sy /= sqrt(rad);
-        float s = sy * cos + sx * sin;
+        sxy /= sqrt(rad);
+        float s = sy * cos * cos + sx * sin * sin - 2 * sxy * cos * sin;
         if (tear_force + s * 200> bind_force)
             crack = true;
     }
@@ -963,13 +1266,15 @@ void TearEdge
         float cos1h = sqrt((1 + cos) / 2);
         float sin1h = sqrt((1 - cos) / 2);
         float sin3h = 3 * sin1h - 4 * sin1h * sin1h * sin1h; 
-        float sx = cos1h - (1 + sin1h * sin3h);
-        float sy = cos1h + (1 + sin1h * sin3h);
+        float cos3h = 4 * cos1h * cos1h * cos1h - 3 * cos1h;
+        float sx = cos1h * (1 - sin1h * sin3h);
+        float sy = cos1h * (1 + sin1h * sin3h);
+        float sxy = cos1h * sin1h * cos3h;
         sx /= sqrt(rad);
         sy /= sqrt(rad);
-        float s = sy * cos + sx * sin;
+        sxy /= sqrt(rad);
+        float s = sy * cos * cos + sx * sin * sin - 2 * sxy * cos * sin;
         if (tear_force + s * 200 > bind_force)
-
             crack = true;
     }
     // そもそも亀裂が発生する状態なのかのチェック
@@ -1021,7 +1326,7 @@ void TearEdge
         if (dot(_VertBufferRW[ei.vert].direction, _gravity.xyz) > 0)
         {
             _VertBufferRW[ei.vert].lowest = true;
-            _VertBufferRW[ei.vert].rust += 100;
+            //_VertBufferRW[ei.vert].rust += 100;
         }
     }
     if (_VertBufferRW[ep.vert].stat == 2) {
@@ -1031,7 +1336,7 @@ void TearEdge
         if (dot(_VertBufferRW[ep.vert].direction, _gravity.xyz) > 0)
         {
             _VertBufferRW[ep.vert].lowest = true;
-            _VertBufferRW[ep.vert].rust += 100;
+            //_VertBufferRW[ep.vert].rust += 100;
         }
     }
 
@@ -1066,7 +1371,6 @@ void TearEdge
         InterlockedAdd(_VertCounter[0], 1, nvi);// 現在のカウンタの値を新たな頂点のIDとしてから1を加算する
         CloneVert(ei.vert, nvi);                // InterlockerAddの第3引数には加算前の値が格納されることに注意
         InterlockedAdd(_LockProcess[nvi], 1);   // このフレームではこのスレッド以外で頂点の操作を許さない
-        //_VertBufferRW[nvi].col = float4(1, 0, 1, 1);
 
         int home_e;
         int tore_e;                             // すでに断裂していた稜線
@@ -1098,6 +1402,7 @@ void TearEdge
         tore_e = tmp_e;
         if (_EdgeBufferRW[tore_e].pair != -1) {
             groupR[countR++] = tore_e;
+            dR += _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert].pos - _VertBufferRW[_EdgeBufferRW[tmp_e].vert].pos;
         }
         
         // 時計回り探索 さっき断裂した半稜線は含むが，断裂していた半稜線は含まない
@@ -1115,6 +1420,8 @@ void TearEdge
             groupL[countL++] = tmp_e;
             tmp_e = _EdgeBufferRW[tmp_e].prev;
         }
+        dR = normalize(dR);
+        dL = normalize(dL);
 
         if (countR == 0) {
             // edge.vertの付け替え
@@ -1130,7 +1437,7 @@ void TearEdge
                 _EdgeBufferRW[groupL[i]].vert = nvi;
             }
             if (dot(_gravity.xyz, dL) > 0) {
-                _VertBufferRW[nvi].rust += 100;
+                _VertBufferRW[nvi].rust += 100 * dot(_gravity.xyz, dL);
                 if (_VertBufferRW[ei.vert].lowest) {
                     _VertBufferRW[ei.vert].lowest = false;
                     _VertBufferRW[nvi].lowest = true;
@@ -1138,7 +1445,7 @@ void TearEdge
             }
             else {
                 _VertBufferRW[nvi].rust = _VertBufferRW[ei.vert].rust;
-                _VertBufferRW[ei.vert].rust += 100;
+                _VertBufferRW[ei.vert].rust += 100 * dot(_gravity.xyz, -dL);
                 if (_VertBufferRW[ei.vert].lowest) {
                     _VertBufferRW[ei.vert].lowest = true;
                     _VertBufferRW[nvi].lowest = false;
@@ -1157,7 +1464,7 @@ void TearEdge
                 _EdgeBufferRW[groupR[i]].vert = nvi;
             }
             if (dot(_gravity.xyz, dR) > 0) {
-                _VertBufferRW[nvi].rust += 100;
+                _VertBufferRW[nvi].rust += 100 * dot(_gravity.xyz, dR);
                 if (_VertBufferRW[ei.vert].lowest) {
                     _VertBufferRW[ei.vert].lowest = false;
                     _VertBufferRW[nvi].lowest = true;
@@ -1165,7 +1472,7 @@ void TearEdge
             }
             else {
                 _VertBufferRW[nvi].rust = _VertBufferRW[ei.vert].rust;
-                _VertBufferRW[ei.vert].rust += 100;
+                _VertBufferRW[ei.vert].rust += 100 * dot(_gravity.xyz, -dR);
                 if (_VertBufferRW[ei.vert].lowest) {
                     _VertBufferRW[ei.vert].lowest = true;
                     _VertBufferRW[nvi].lowest = false;
@@ -1183,7 +1490,6 @@ void TearEdge
         uint nvi; // new vert index
         InterlockedAdd(_VertCounter[0], 1, nvi);
         CloneVert(ep.vert, nvi);
-        //_VertBufferRW[nvi].col = float4(0, 1, 1, 1);
 
         InterlockedAdd(_LockProcess[nvi], 1);   // このフレームではこのスレッド以外で頂点の操作を許さない
 
@@ -1217,6 +1523,7 @@ void TearEdge
         tore_e = tmp_e;
         if (_EdgeBufferRW[tore_e].pair != -1) {
             groupR[countR++] = tore_e;
+            dR += _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert].pos - _VertBufferRW[_EdgeBufferRW[tmp_e].vert].pos;
         }
 
         // 時計回り探索 さっき断裂した半稜線は含むが，断裂していた半稜線は含まない
@@ -1234,6 +1541,8 @@ void TearEdge
             groupL[countL++] = tmp_e;
             tmp_e = _EdgeBufferRW[tmp_e].prev;
         }
+        dR = normalize(dR);
+        dL = normalize(dL);
 
         if (countR == 0) {
             // edge.vertの付け替え
@@ -1249,7 +1558,7 @@ void TearEdge
                 _EdgeBufferRW[groupL[i]].vert = nvi;
             }
             if (dot(_gravity.xyz, dL) > 0) {
-                _VertBufferRW[nvi].rust += 100;
+                _VertBufferRW[nvi].rust += 100 * dot(_gravity.xyz, dL);
                 if (_VertBufferRW[ep.vert].lowest) {
                     _VertBufferRW[ep.vert].lowest = false;
                     _VertBufferRW[nvi].lowest = true;
@@ -1257,7 +1566,7 @@ void TearEdge
             }
             else {
                 _VertBufferRW[nvi].rust = _VertBufferRW[ep.vert].rust;
-                _VertBufferRW[ep.vert].rust += 100;
+                _VertBufferRW[ep.vert].rust += 100 * dot(_gravity.xyz, -dL);
                 if (_VertBufferRW[ep.vert].lowest) {
                     _VertBufferRW[ep.vert].lowest = true;
                     _VertBufferRW[nvi].lowest = false;
@@ -1277,7 +1586,7 @@ void TearEdge
                 _EdgeBufferRW[groupR[i]].vert = nvi;
             }
             if (dot(_gravity.xyz, dR) > 0) {
-                _VertBufferRW[nvi].rust += 100;
+                _VertBufferRW[nvi].rust += 100 * dot(_gravity.xyz, dR);
                 if (_VertBufferRW[ep.vert].lowest) {
                     _VertBufferRW[ep.vert].lowest = false;
                     _VertBufferRW[nvi].lowest = true;
@@ -1285,7 +1594,7 @@ void TearEdge
             }
             else {
                 _VertBufferRW[nvi].rust = _VertBufferRW[ep.vert].rust;
-                _VertBufferRW[ep.vert].rust += 100;
+                _VertBufferRW[ep.vert].rust += 100 * dot(_gravity.xyz, -dR);
                 if (_VertBufferRW[ep.vert].lowest) {
                     _VertBufferRW[ep.vert].lowest = true;
                     _VertBufferRW[nvi].lowest = false;
