@@ -128,6 +128,7 @@ namespace Weathering_GPU
         int AccumulateDust;
         int SetRustBuffer;
         int PropagateRust;
+        int ProceedChalking;
 
         int TestPBD;
         int PBD_UpdateConstraint;
@@ -201,6 +202,7 @@ namespace Weathering_GPU
             AccumulateDust = CS.FindKernel("AccumulateDust");
             SetRustBuffer = CS.FindKernel("SetRustBuffer");
             PropagateRust = CS.FindKernel("PropagateRust");
+            ProceedChalking = CS.FindKernel("ProceedChalking");
             PBD_UpdateConstraint = CS.FindKernel("PBD_UpdateConstraint");
             PBD_Itteration_L = CS.FindKernel("PBD_Itteration_L");
             PBD_Itteration_B = CS.FindKernel("PBD_Itteration_B");
@@ -234,8 +236,6 @@ namespace Weathering_GPU
             // 頂点の数は最大で三角形の3倍＝edgeNumなのでその分のバッファだけ確保しておく
             // 頂点 (ハーフエッジ構造)
             _vertBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(VertData)));
-            //UnityEngine.Debug.Log(filter.mesh.GetVertexBuffer(0).target);
-            //_vertBuffer = filter.mesh.GetVertexBuffer(0);
             _positionBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(Vector3)));
             _positionBuffer.SetData(filter.mesh.vertices);
             _normalBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(Vector3)));
@@ -362,6 +362,9 @@ namespace Weathering_GPU
             // SetRustBuffer
             CS.SetBuffer(SetRustBuffer, "_VertBufferRW", _vertBuffer);
 
+            // ProceedChalking
+            CS.SetBuffer(ProceedChalking, "_VertBufferRW", _vertBuffer);
+
             // PropagateRust
             CS.SetBuffer(PropagateRust, "_VertBufferRW", _vertBuffer);
             CS.SetBuffer(PropagateRust, "_EdgeBufferRW", _edgeBuffer);
@@ -421,7 +424,7 @@ namespace Weathering_GPU
             CS.SetInt("_BConstNum", conBNum);
 
             // 頂点情報更新
-            CS.SetFloat("_delta_time", Time.deltaTime * 0 + 0.2f);
+            CS.SetFloat("_delta_time", Time.deltaTime * SimulationSpeedSlider.SliderValue);
             CS.Dispatch(PBD_StartFrame, vertGS, 1, 1);
 
             // イテレーション
@@ -675,6 +678,7 @@ namespace Weathering_GPU
             CS.Dispatch(AccumulateDust, vertGS, 1, 1);
             CS.Dispatch(SetRustBuffer, vertGS, 1, 1);
             CS.Dispatch(PropagateRust, vertGS, 1, 1);
+            CS.Dispatch(ProceedChalking, vertGS, 1, 1);
 
             //CS.SetFloat("length_ratio", 1.25f - 0.25f * Mathf.Cos(Time.time * 0.5f));
             //CS.Dispatch(PBD_UpdateConstraint, filter.mesh.triangles.Length, 1, 1); // ComputeShaderを実行
@@ -735,7 +739,6 @@ namespace Weathering_GPU
             var triangleArr = new int[faceNum * 3];
             _triangleBuffer.GetData(triangleArr);
             filter.mesh.SetIndexBufferData(triangleArr, 0, 0, faceNum * 3);
-
             //filter.mesh.triangles = triangleArr;
 
             filter.mesh.RecalculateNormals();

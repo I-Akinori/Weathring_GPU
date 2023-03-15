@@ -55,6 +55,7 @@ Shader "Custom/vertex_color"
                 
                 fixed rust = IN.vertColor.r;
                 fixed dust = IN.vertColor.g;
+                fixed chalk = IN.vertColor.b;
 
                 fixed4 rc0 = fixed4(255.0 / 255.0, 255.0 / 255.0, 1.0, 1.0);
                 fixed4 rc1 = fixed4(191.0 / 255.0, 95.0 / 255.0, 0.0, 1.0);
@@ -67,8 +68,8 @@ Shader "Custom/vertex_color"
                 c = c * rust_mask;
                 c = c * (1 - rust * 0.1) + rust_col * rust * 0.1;
                 c = c * (1 - dust);
-                g = _Glossiness * (1 - rust * 0.1) * (1 - dust);
-                m = _Metallic * (1 - rust * 0.1) * (1 - dust);
+                g = _Glossiness * (1 - rust * 0.1) * (1 - dust) * (1 - chalk);
+                m = _Metallic * (1 - rust * 0.1) * (1 - dust) * (1 - chalk);
 
                 //dust = 0;
                 o.Albedo = c.rgb * (1 - dust); // ïœçX

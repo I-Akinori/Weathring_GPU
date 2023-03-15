@@ -118,6 +118,7 @@ void CloneVert(int source, int target) {
 
     _VertBufferRW[target].dust = _VertBufferRW[source].dust;
     _VertBufferRW[target].rust = _VertBufferRW[source].rust;
+    _VertBufferRW[target].chalk = _VertBufferRW[source].chalk;
     _VertBufferRW[target].bond = _VertBufferRW[source].bond;
     _VertBufferRW[target].onEdge = _VertBufferRW[source].onEdge;
     _VertBufferRW[target].stat = _VertBufferRW[source].stat;
@@ -161,6 +162,7 @@ void InitVert
     _VertBufferRW[P_ID].dust = 0;
     _VertBufferRW[P_ID].rust = 0;
     _VertBufferRW[P_ID].rust_buf = 0;
+    _VertBufferRW[P_ID].chalk = 0;
     _VertBufferRW[P_ID].bond = OctavePerlin(_VertBufferRW[P_ID].pos * 1 + float3(100, 200, 300), 5, 0.5) * 400 - 100;
     _VertBufferRW[P_ID].onEdge = 0;
     _VertBufferRW[P_ID].stat = 0;
@@ -368,6 +370,21 @@ void ComputeEdgeCurvature
     float angle = acos(clamp(dot(n0, n1), -1, 1));
     
     _EdgeBufferRW[P_ID].angle = dot(cross(v1 - v0, v2 - v0), v3 - v0) > 0 ? angle - PI : PI - angle;
+}
+#pragma kernel ProceedChalking
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void ProceedChalking
+(
+    uint3 DTid : SV_DispatchThreadID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _VertNum) return;
+
+    float w = 0.01;
+
+    _VertBufferRW[P_ID].chalk += w * _delta_time;
+
 }
 #pragma kernel AccumulateDust
 [numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
@@ -681,7 +698,8 @@ void PBD_Update_Pos
     const unsigned int P_ID = DTid.x;
     if (P_ID >= _VertNum) return;
     
-    _VertBufferRW[P_ID].vel = (_VertBufferRW[P_ID].ass - _VertBufferRW[P_ID].pos) / _delta_time;
+    _VertBufferRW[P_ID].vel = (_VertBufferRW[P_ID].ass - _VertBufferRW[P_ID].pos);
+    _VertBufferRW[P_ID].vel *= _delta_time > 0 ? 1 / _delta_time : 0;
     _VertBufferRW[P_ID].pos = _VertBufferRW[P_ID].ass;
 }
 
@@ -764,6 +782,7 @@ void SetVertColor_Normal
 
     _VertBufferRW[P_ID].col.x = min(_VertBufferRW[P_ID].rust / 100, 1);
     _VertBufferRW[P_ID].col.y = 1.0 - exp(-_VertBufferRW[P_ID].dust);
+    _VertBufferRW[P_ID].col.z = 1.0 - exp(-_VertBufferRW[P_ID].chalk);
 }
 #pragma kernel SetVertColor_Separate
 [numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
@@ -985,6 +1004,8 @@ void UpdateVertForces
 
     _VertBufferRW[P_ID].liftingForce = asfloat(_LiftingForceAsInt[P_ID]);
     
+    _VertBufferRW[P_ID].bond -= (1 - exp(- _VertBufferRW[P_ID].chalk));
+
     // 対話的操作
     if (_control_separation == 1 && length(_VertBufferRW[P_ID].pos - _hit_point.xyz) < _hit_point.w)
         _VertBufferRW[P_ID].bond -= _VertBufferRW[P_ID].bond * 0.05;
