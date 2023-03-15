@@ -12,13 +12,14 @@ Shader "custom/VertexColor"
         struct appdata
         {
           float4 vertex : POSITION;
-          float4 color: COLOR;
+          //float4 color: COLOR;
+          float4 color: TEXCOORD1;
         };
 
         struct v2f
         {
           float4 vertex : SV_POSITION;
-          float4 color : COLOR;
+          float4 color: TEXCOORD1;
         };
 
         void vert(in appdata v, out v2f o)

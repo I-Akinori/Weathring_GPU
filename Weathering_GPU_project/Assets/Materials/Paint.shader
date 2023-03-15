@@ -31,7 +31,8 @@ Shader "Custom/vertex_color"
 
             void vert(inout appdata_full v, out Input o) {  // vert()‚ð’Ç‰Á
                 UNITY_INITIALIZE_OUTPUT(Input, o);
-                o.vertColor = v.color;
+                //o.vertColor = v.color;
+                o.vertColor = v.texcoord1;
             }
 
             half _Glossiness;
