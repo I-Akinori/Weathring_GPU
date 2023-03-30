@@ -62,7 +62,7 @@ namespace Weathering_GPU
             
             CamControlIsActive(); //カメラ操作の有効無効
 
-            if (_cameraMoveActive && result.Count == 0 && CamToggle._cam)
+            if (_cameraMoveActive && result.Count == 0)
             {
                 ResetCameraRotation(); //回転角度のみリセット
                 CameraRotationMouseControl(); //カメラの回転 マウス
@@ -129,7 +129,7 @@ namespace Weathering_GPU
                 //                                     );
                 _camTransform.rotation = Quaternion.Euler(eulerX, eulerY, 0);
             }
-            else if (Input.GetMouseButton(0))
+            else if (Input.GetMouseButton(0) && (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)))
             {
                 //(移動開始座標 - マウスの現在座標) / 解像度 で正規化
                 float x = (_startMousePos.x - Input.mousePosition.x) / Screen.width;

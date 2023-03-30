@@ -1,16 +1,16 @@
 struct LengthConstraint {
-    int p0;
-    int p1;
+    uint p0;
+    uint p1;
     float offset;
     float stiff;
     float thr;      // if thr < 0, disable the constraint
 };
 
 struct BendConstraint {
-    int p0;
-    int p1;
-    int p2;
-    int p3;
+    uint p0;
+    uint p1;
+    uint p2;
+    uint p3;
     float offset;
     float stiff;
     float thr;
@@ -35,21 +35,22 @@ struct Vert {
     float chalk;
     float bond;
     float liftingForce;     // 可視化用
-    uint stat;
+    uint stat;         // 0: 分離前, 1: 分離状態, 2: 亀裂端点, 3 ~ 30: (stat - 1) 本の亀裂，32: 無効化
     float3 direction;  // ひび割れの方向 (status == 1 のときに参照)
-    int onEdge;
-    int lowest;  // 0: false, 1: true
+    uint onEdge;
+    uint lowest;  // 0: false, 1: true
     float thickness;
-    int edge;     // HalfEdge
+    uint edge;     // HalfEdge
+    uint orig;
     float w;
 };
 
 struct Edge {
-    int next;   // HalfEdge
-    int prev;   // HalfEdge
-    int pair;   // HalfEdge
-    int face;   // Face
-    int vert;   // Vertex
+    uint next;   // HalfEdge
+    uint prev;   // HalfEdge
+    uint pair;   // HalfEdge
+    uint face;   // Face
+    uint vert;   // Vertex
     uint stat;   // 0: connected, 1: tore, 2: no pair
 
     float angle;
@@ -58,7 +59,7 @@ struct Edge {
 };
 
 struct Face {
-    int edge;   // HalfEdge
+    uint edge;   // HalfEdge
     uint stat;   // 0: attatched, 1: peeled
 
     float contraction;

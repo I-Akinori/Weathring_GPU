@@ -25,26 +25,28 @@ namespace Weathering_GPU
         private int faceGS;
         private int conLGS;
         private int conBGS;
-        
+
         private GameObject baseObject;
         private MeshFilter baseFilter;
         private MeshRenderer baseRenderer;
 
+        private List<int> locked_verts;
+
         //private int count = 0;
         struct LengthConstraintData
         {
-            public int P0; // 端点1
-            public int P1; // 端点2
+            public uint P0; // 端点1
+            public uint P1; // 端点2
             public float Offset;
             public float Stiff;
             public float Thr;
         };
         struct BendConstraintData
         {
-            public int P0; // 端点1
-            public int P1; // 端点2
-            public int P2; // 端点3
-            public int P3; // 端点4
+            public uint P0; // 端点1
+            public uint P1; // 端点2
+            public uint P2; // 端点3
+            public uint P3; // 端点4
             public float Offset;
             public float Stiff;
             public float Thr;
@@ -71,20 +73,21 @@ namespace Weathering_GPU
             public float LiftingForce;     // 可視化用
             public uint Status;
             public Vector3 Direction;  // ひび割れの方向 (status == 1 のときに参照)
-            public int OnEdge;
-            public int Lowest;
+            public uint OnEdge;
+            public uint Lowest;
             public float Thickness;
-           
-            public int Edge;
+
+            public uint Edge;
+            public uint Orig;       // 元の頂点，分裂した頂点では (ID != Orig)
             public float Weight;
         };
         struct EdgeData
         {
-            public int Next;
-            public int Prev;
-            public int Pair;
-            public int Face;
-            public int Vert;
+            public uint Next;
+            public uint Prev;
+            public uint Pair;
+            public uint Face;
+            public uint Vert;
             public uint Stat;
 
             public float Angle;
@@ -93,7 +96,7 @@ namespace Weathering_GPU
         };
         struct FaceData
         {
-            public int Edge;
+            public uint Edge;
             public uint Stat;
 
             public float Contraction;
@@ -174,8 +177,10 @@ namespace Weathering_GPU
 
         GraphicsBuffer _lockProcessBuffer;     // 1フレームで1度しか認めない処理
         GraphicsBuffer _vertCounterBuffer;           // GPU側での変更を許す頂点の数
+        GraphicsBuffer _blankIndexBuffer;
 
-        void InitNums() {
+        void InitNums()
+        {
             //vertNum = filter.mesh.triangles.Length; 
             vertNum = filter.mesh.vertices.Length;
             edgeNum = filter.mesh.triangles.Length;
@@ -191,7 +196,8 @@ namespace Weathering_GPU
             conLGS = Mathf.CeilToInt((float)conLNum / SIMULATION_BLOCK_SIZE);
             conBGS = Mathf.CeilToInt((float)conBNum / SIMULATION_BLOCK_SIZE);
         }
-        void InitIndex() {
+        void InitIndex()
+        {
             InitVert = CS.FindKernel("InitVert");
             InitFace = CS.FindKernel("InitFace");
             InitEdge = CS.FindKernel("InitEdge");
@@ -216,7 +222,7 @@ namespace Weathering_GPU
             SetVertForces = CS.FindKernel("SetVertForces");
             SetVertColor_Normal = CS.FindKernel("SetVertColor_Normal");
             SetVertColor_Separate = CS.FindKernel("SetVertColor_Separate");
-            SetVertColor_Tear = CS.FindKernel("SetVertColor_Tear");            
+            SetVertColor_Tear = CS.FindKernel("SetVertColor_Tear");
             UpdateLiftingForce = CS.FindKernel("UpdateLiftingForce");
             UpdateVertForces = CS.FindKernel("UpdateVertForces");
             UpdateBindingForce = CS.FindKernel("UpdateBindingForce");
@@ -245,7 +251,7 @@ namespace Weathering_GPU
 
             _basePositionBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, vertNum, Marshal.SizeOf(typeof(Vector3)));
             _baseNormalBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, vertNum, Marshal.SizeOf(typeof(Vector3)));
-            
+
             CS.SetBuffer(InitVert, "_PositionBuffer", _positionBuffer);
             CS.SetBuffer(InitVert, "_NormalBuffer", _normalBuffer);
             CS.SetBuffer(InitVert, "_UVBuffer", _uvBuffer);
@@ -255,7 +261,7 @@ namespace Weathering_GPU
             UnityEngine.Debug.Log(sw.Elapsed);
             // 頂点 (Mesh用)
             _vertexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(VertexData)));
-            
+
             // 半稜線・面 (ハーフエッジ構造)
             _edgeBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(EdgeData)));
             _faceBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, faceNum, Marshal.SizeOf(typeof(FaceData)));
@@ -274,7 +280,7 @@ namespace Weathering_GPU
             PBD_Itteration_L = CS.FindKernel("PBD_Itteration_L");
             _deltaPosAsInt = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(Vector3Int)));
             _deltaCount = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(int)));
-            
+
             _liftingForceAsInt = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(int)));
             _liftingForceCount = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(int)));
 
@@ -282,11 +288,14 @@ namespace Weathering_GPU
             _bendConstraintBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, conBNum, Marshal.SizeOf(typeof(BendConstraintData)));
 
             _lockProcessBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(uint)));
-            _vertCounterBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, Marshal.SizeOf(typeof(uint)));
-            _vertCounterBuffer.SetData(new int[] { vertNum });
+            _vertCounterBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 2, Marshal.SizeOf(typeof(uint)));
+            // 第0要素は頂点数，第1要素は空きの数
+            _vertCounterBuffer.SetData(new int[] { vertNum, 0 });
+
+            // 削除で空いたインデックスを格納する配列
+            _blankIndexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(uint)));
             // バッファのセット
             // InitEdge
-
 
             // SetTriangles
             CS.SetBuffer(SetTriangles, "_VertBufferRW", _vertBuffer);
@@ -370,7 +379,7 @@ namespace Weathering_GPU
             CS.SetBuffer(PropagateRust, "_EdgeBufferRW", _edgeBuffer);
 
             // SetVertForces
-            CS.SetBuffer(SetVertForces, "_VertBufferRW", _vertBuffer); 
+            CS.SetBuffer(SetVertForces, "_VertBufferRW", _vertBuffer);
             CS.SetBuffer(SetVertForces, "_LiftingForceCount", _liftingForceCount);
             CS.SetBuffer(SetVertForces, "_LiftingForceAsInt", _liftingForceAsInt);
 
@@ -394,6 +403,9 @@ namespace Weathering_GPU
             CS.SetBuffer(UpdateBindingForce, "_VertBufferRW", _vertBuffer);
             CS.SetBuffer(UpdateBindingForce, "_EdgeBufferRW", _edgeBuffer);
             CS.SetBuffer(UpdateBindingForce, "_FaceBufferRW", _faceBuffer);
+            CS.SetBuffer(UpdateBindingForce, "_VertCounter", _vertCounterBuffer);
+            CS.SetBuffer(UpdateBindingForce, "_BlankIndex", _blankIndexBuffer);
+            CS.SetBuffer(UpdateBindingForce, "_LockProcess", _lockProcessBuffer);
 
             // SetVertices
             CS.SetBuffer(SetVertices, "_VertBufferRW", _vertBuffer);
@@ -414,9 +426,10 @@ namespace Weathering_GPU
             CS.SetBuffer(TearEdge, "_BendConstraintBufferRW", _bendConstraintBuffer);
             CS.SetBuffer(TearEdge, "_LockProcess", _lockProcessBuffer);
             CS.SetBuffer(TearEdge, "_VertCounter", _vertCounterBuffer);
-
+            CS.SetBuffer(TearEdge, "_BlankIndex", _blankIndexBuffer);
         }
-        void PBD_Simulation() {
+        void PBD_Simulation()
+        {
             CS.SetInt("_VertNum", vertNum);
             CS.SetInt("_EdgeNum", edgeNum);
             CS.SetInt("_FaceNum", faceNum);
@@ -424,12 +437,12 @@ namespace Weathering_GPU
             CS.SetInt("_BConstNum", conBNum);
 
             // 頂点情報更新
-            CS.SetFloat("_delta_time", Time.deltaTime * SimulationSpeedSlider.SliderValue);
             CS.Dispatch(PBD_StartFrame, vertGS, 1, 1);
 
             // イテレーション
 
-            for (int i = 0; i < 32; i++) {
+            for (int i = 0; i < 32; i++)
+            {
                 CS.SetInt("_itr_count", i);
 
                 CS.Dispatch(PBD_Itteration_L, conLGS, 1, 1);
@@ -441,15 +454,17 @@ namespace Weathering_GPU
             // 頂点情報更新
             CS.Dispatch(PBD_Update_Pos, vertGS, 1, 1);
         }
-        void SetPairEdge() { 
+        void SetPairEdge()
+        {
             // 頂点単位の探索
             CS.SetInt("_EdgeNum", edgeNum);
             //CS.SetBuffer(SetPair, "_TriangleBufferRW", _triangleBuffer);
             CS.Dispatch(SetPair, edgeGS, 1, 1); // ComputeShaderを実行
         }
-        void SetConstraint() {
+        void SetConstraint()
+        {
             // テスト用PBD制約 (稜線の長さを0.1に)
-            
+
             CS.SetBuffer(TestPBD, "_EdgeBufferRW", _edgeBuffer);
             CS.SetBuffer(TestPBD, "_VertBufferRW", _vertBuffer);
             CS.SetBuffer(TestPBD, "_LengthConstraintBufferRW", _lengthConstraintBuffer);
@@ -459,48 +474,60 @@ namespace Weathering_GPU
             var constArr = new LengthConstraintData[conLNum];
             _lengthConstraintBuffer.GetData(constArr);
         }
-        private void InteractiveControl() {
-            var drawpoint = Vector4.zero;
-            if ((Input.GetMouseButton(0) || Input.GetMouseButton(1)) && !CamToggle._cam) {
-                var ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-                RaycastHit hit;
-                if (Physics.Raycast(ray, out hit))
-                {
-                    drawpoint = hit.point;
-                    drawpoint.w = DrawingRangeSlider.DrawingRange;
-                }
-            }
-            CS.SetVector("_hit_point", drawpoint);
-            if (CamToggle._cam)
+        private void InteractiveControl()
+        {
+            if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)
+                || Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt)
+                || Input.GetAxis("Mouse ScrollWheel") != 0 || Input.GetMouseButton(2))
             {
                 CS.SetInt("_control_separation", 0);
                 CS.SetInt("_control_tear", 0);
             }
-            else {
+            else
+            {
+                var drawpoint = Vector4.zero;
+                if (Input.GetMouseButton(0) || Input.GetMouseButton(1))
+                {
+                    var ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+                    RaycastHit hit;
+                    if (Physics.Raycast(ray, out hit))
+                    {
+                        //drawpoint = GetComponent<Transform>().parent != null ? GetComponent<Transform>().parent.TransformPoint(hit.point) : hit.point;
+                        drawpoint = GetComponent<Transform>().InverseTransformPoint(hit.point);
+
+                        drawpoint.w = DrawingRangeSlider.DrawingRange / GetComponent<Transform>().localScale.magnitude;
+                    }
+                }
+                CS.SetVector("_hit_point", drawpoint);
                 if (Input.GetMouseButton(0))
                 {
-                    if (WeaToggle._wea)
+                    if (ControlMode.ctrl_mode == 0)
+                    {
                         CS.SetInt("_control_separation", 1);
-                    else
-                        CS.SetInt("_control_separation", 2);
-                }
-                if (Input.GetMouseButton(1))
-                {
-                    if (WeaToggle._wea)
                         CS.SetInt("_control_tear", 1);
-                    else
+                        CS.SetInt("_control_stain", 0);
+                    }
+                    else if (ControlMode.ctrl_mode == 1)
+                    {
+                        CS.SetInt("_control_separation", 2);
                         CS.SetInt("_control_tear", 2);
-
-                }
-                if (!Input.GetMouseButton(0) && !Input.GetMouseButton(1))
-                {
-                    CS.SetInt("_control_separation", 0);
-                    CS.SetInt("_control_tear", 0);
+                        CS.SetInt("_control_stain", 0);
+                    }
+                    else if (ControlMode.ctrl_mode == 2)
+                    {
+                        CS.SetInt("_control_separation", 0);
+                        CS.SetInt("_control_tear", 0);
+                        CS.SetInt("_control_stain", 4);
+                    } else if (ControlMode.ctrl_mode == 3) {
+                        CS.SetInt("_control_separation", 3);
+                        CS.SetInt("_control_tear", 3);
+                        CS.SetInt("_control_stain", 4);
+                    }
                 }
             }
-            
 
-            switch (DropdownControl.vis_mode) {
+            switch (VisMode.vis_mode)
+            {
                 case 0:
                     renderer.material = mainMat;
                     CS.Dispatch(SetVertColor_Normal, vertGS, 1, 1);
@@ -513,17 +540,19 @@ namespace Weathering_GPU
                     renderer.material = subMat;
                     CS.Dispatch(SetVertColor_Tear, vertGS, 1, 1);
                     break;
-            } 
+            }
         }
         private void UpdateVertNum()
         {
-            var countArr = new uint[1];
+            var countArr = new uint[2];
             _vertCounterBuffer.GetData(countArr);
-            vertNum = (int) countArr[0];
+            //UnityEngine.Debug.Log(countArr[1]);
+            vertNum = (int)countArr[0];
             vertGS = Mathf.CeilToInt((float)vertNum / SIMULATION_BLOCK_SIZE);
             CS.SetInt("_VertNum", vertNum);
         }
-        void ReleaseBuffer() {
+        void ReleaseBuffer()
+        {
             if (_positionBuffer != null)
             {
                 _positionBuffer.Release();
@@ -609,13 +638,29 @@ namespace Weathering_GPU
                 _vertCounterBuffer.Release();
                 _vertCounterBuffer = null;
             }
+            if (_basePositionBuffer != null)
+            {
+                _basePositionBuffer.Release();
+                _basePositionBuffer = null;
+            }
+            if (_baseNormalBuffer != null)
+            {
+                _baseNormalBuffer.Release();
+                _baseNormalBuffer = null;
+            }
+            if (_blankIndexBuffer != null)
+            {
+                _blankIndexBuffer.Release();
+                _blankIndexBuffer = null;
+            }
         }
         void OnDestroy()
         {
             // バッファを破棄
             ReleaseBuffer();
         }
-        void SetBaseMesh() {
+        void SetBaseMesh()
+        {
             UnityEngine.Debug.Log("SetBaseMesh");
             baseObject = Instantiate(this.gameObject);
             Destroy(baseObject.GetComponent<Weathering_GPU.GPUMesh>());
@@ -652,7 +697,7 @@ namespace Weathering_GPU
                 renderer = mr;
             else
                 renderer = this.gameObject.AddComponent<MeshRenderer>();
-            
+
 
             InitNums();
             InitIndex();
@@ -665,12 +710,17 @@ namespace Weathering_GPU
             SetBaseMesh();
 
             CS.SetVector("_gravity", new Vector4(0, -1, 0, 0));
+
+            locked_verts = new List<int>();     // デバッグ用
         }
 
         // Update is called once per frame
         void Update()
         {
-            // GPUで頂点が追加された場合、vertNum以上のIDに対して参照されうるのおでedgeNumで固定する
+
+            CS.SetFloat("_delta_time", Time.deltaTime * SimulationSpeedSlider.SliderValue);
+
+            // GPUで頂点が追加された場合、vertNum以上のIDに対して参照されうるのでedgeNumで固定する
             _lockProcessBuffer.SetData(new uint[edgeNum]);
 
             CS.Dispatch(ComputeVertCurvature, vertGS, 1, 1);
@@ -690,8 +740,14 @@ namespace Weathering_GPU
             CS.Dispatch(UpdateLiftingForce, edgeGS, 1, 1);
             CS.Dispatch(UpdateVertForces, vertGS, 1, 1);
             CS.Dispatch(UpdateBindingForce, faceGS, 1, 1);
+
+            var countArr = new uint[2];
+            _vertCounterBuffer.GetData(countArr);
+            //UnityEngine.Debug.Log(countArr[1]);
+
             CS.Dispatch(SeparateVertex, vertGS, 1, 1);
-            CS.Dispatch(TearEdge, edgeGS, 1, 1);
+            if (SimulationSpeedSlider.SliderValue > 0)
+                CS.Dispatch(TearEdge, edgeGS, 1, 1);
 
             // 頂点単位の探索
             //CS.Dispatch(SearchVertices, vertGS, 1, 1); // ComputeShaderを実行
@@ -744,23 +800,102 @@ namespace Weathering_GPU
             filter.mesh.RecalculateNormals();
             filter.mesh.RecalculateBounds();
 
-            var edgeArr = new EdgeData[filter.mesh.triangles.Length];
-            _edgeBuffer.GetData(edgeArr);
-            var constArr = new BendConstraintData[filter.mesh.triangles.Length];
-            _bendConstraintBuffer.GetData(constArr);
-            var lockArr = new uint[vertNum];
-            _lockProcessBuffer.GetData(lockArr);
-            //UnityEngine.Debug.Log(filter.mesh.normals[norArr.Length - 1]);
+            // Debug
+            if (true)
+            {
+                var edgeArr = new EdgeData[filter.mesh.triangles.Length];
+                _edgeBuffer.GetData(edgeArr);
+                var constArr = new BendConstraintData[filter.mesh.triangles.Length];
+                _bendConstraintBuffer.GetData(constArr);
+                var lockArr = new uint[vertNum];
+                _lockProcessBuffer.GetData(lockArr);
+                //UnityEngine.Debug.Log(filter.mesh.normals[norArr.Length - 1]);
 
-            //UnityEngine.Debug.Log(count++);
-            //posArr = null;
-            //norArr = null;
-            //colArr = null;
-            //uvArr = null;
-            vertArr = null;
-            edgeArr = null;
-            constArr = null;
-            triangleArr = null;
+                int count = 0;
+                for (int i = 0; i < vertArr.Length; i++)
+                {
+                    if (vertArr[i].Status == 32)
+                    {
+                        //if (i < 10365)
+                        //    UnityEngine.Debug.Log("lacked origin: " + i);
+                        count++;
+                        continue;
+                        //UnityEngine.Debug.Log("32: " + i);
+                        //UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + vertArr[i].Nor * 0.1f, Color.magenta);
+                    };
+                    if (vertArr[i].Orig != i)
+                    {
+                        UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + vertArr[i].Nor * 0.1f, Color.cyan);
+
+                    }
+                    else
+                    {
+                        UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + vertArr[i].Nor * 0.1f, Color.magenta);
+                        //if (i >= 10365)
+                        //    UnityEngine.Debug.Log("fake origin: " + i);
+                    }
+                }
+                var blankArr = new uint[countArr[1]];
+                _blankIndexBuffer.GetData(blankArr);
+                for (int i = 0; i < edgeArr.Length; i++)
+                {
+                    if (edgeArr[i].Stat == 64)
+                    {
+                        UnityEngine.Debug.Log("Error 64: ");
+                        UnityEngine.Debug.DrawLine(vertArr[edgeArr[i].Vert].Pos, vertArr[edgeArr[edgeArr[i].Next].Vert].Pos, Color.magenta);
+
+                    }
+
+                    for (int j = 0; j < blankArr.Length; j++)
+                    {
+                        if (edgeArr[i].Vert == blankArr[j])
+                        {
+                            //UnityEngine.Debug.DrawLine(vertArr[edgeArr[i].Vert].Pos, vertArr[edgeArr[edgeArr[i].Next].Vert].Pos, Color.magenta);
+                            //UnityEngine.Debug.Log("Error: " + i + "/" + j + "/" + blankArr[j]);
+                        }
+                    }
+                    if (edgeArr[i].Stat == 1)
+                        UnityEngine.Debug.DrawLine(vertArr[edgeArr[i].Vert].Pos, vertArr[edgeArr[edgeArr[i].Next].Vert].Pos, Color.green);
+                }
+                int lock_counter = 0;
+                for (int i = 0; i < lockArr.Length; i++)
+                {
+                    if (lockArr[i] == 1)
+                    {
+                        if (lock_counter == 0)
+                            locked_verts = new List<int>();
+                        lock_counter++;
+                        UnityEngine.Debug.Log("locked: " + i);
+                        locked_verts.Add(i);
+                        //UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + vertArr[i].Nor * 0.1f, Color.magenta);
+                    };
+                }
+                for (int i = 0; i < blankArr.Length; i++)
+                {
+                    UnityEngine.Debug.Log("blank[" + i + "]: " + blankArr[i] + "/" + vertArr[blankArr[i]].Status);
+                }
+                UnityEngine.Debug.Log("blank_num: " + countArr[1]);
+
+                if (lock_counter > 0)
+                {
+                    UnityEngine.Debug.Log("locked: " + lock_counter);
+                }
+                foreach (var v in locked_verts)
+                {
+                    UnityEngine.Debug.DrawLine(vertArr[v].Pos, vertArr[v].Pos + vertArr[v].Nor * 0.2f, Color.black);
+                }
+                //UnityEngine.Debug.Log("verts: " + vertNum);
+
+                //UnityEngine.Debug.Log(count++);
+                //posArr = null;
+                //norArr = null;
+                //colArr = null;
+                //uvArr = null;
+                vertArr = null;
+                edgeArr = null;
+                constArr = null;
+                triangleArr = null;
+            }
         }
     } // class
 } // namespace

@@ -4,7 +4,7 @@ using UnityEngine.UI;
 
 namespace Weathering_GPU
 {
-    public class DropdownControl : MonoBehaviour
+    public class VisMode : MonoBehaviour
     {
         public Dropdown dropdown;
 
