@@ -9,8 +9,9 @@ namespace Weathering_GPU
 {
     public class GPUMesh : MonoBehaviour
     {
-        private MeshFilter filter;
-        private MeshRenderer renderer;
+        private MeshFilter filt;
+        private MeshRenderer rend;
+        private MeshCollider coll;
         [SerializeField] private Material mainMat;
         [SerializeField] private Material subMat;
         [SerializeField] private Material baseMat;
@@ -181,12 +182,12 @@ namespace Weathering_GPU
 
         void InitNums()
         {
-            //vertNum = filter.mesh.triangles.Length; 
-            vertNum = filter.mesh.vertices.Length;
-            edgeNum = filter.mesh.triangles.Length;
-            faceNum = filter.mesh.triangles.Length / 3;
-            conLNum = filter.mesh.triangles.Length;
-            conBNum = filter.mesh.triangles.Length;
+            //vertNum = filt.mesh.triangles.Length; 
+            vertNum = filt.mesh.vertices.Length;
+            edgeNum = filt.mesh.triangles.Length;
+            faceNum = filt.mesh.triangles.Length / 3;
+            conLNum = filt.mesh.triangles.Length;
+            conBNum = filt.mesh.triangles.Length;
         }
         void UpdateGroupSize()
         {
@@ -243,11 +244,11 @@ namespace Weathering_GPU
             // 頂点 (ハーフエッジ構造)
             _vertBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(VertData)));
             _positionBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(Vector3)));
-            _positionBuffer.SetData(filter.mesh.vertices);
+            _positionBuffer.SetData(filt.mesh.vertices);
             _normalBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(Vector3)));
-            _normalBuffer.SetData(filter.mesh.normals);
+            _normalBuffer.SetData(filt.mesh.normals);
             _uvBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(Vector2)));
-            _uvBuffer.SetData(filter.mesh.uv);
+            _uvBuffer.SetData(filt.mesh.uv);
 
             _basePositionBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, vertNum, Marshal.SizeOf(typeof(Vector3)));
             _baseNormalBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, vertNum, Marshal.SizeOf(typeof(Vector3)));
@@ -271,7 +272,7 @@ namespace Weathering_GPU
 
             CS.SetBuffer(InitEdge, "_EdgeBufferRW", _edgeBuffer);
             _triangleBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, faceNum * 3, Marshal.SizeOf(typeof(int)));
-            _triangleBuffer.SetData(filter.mesh.triangles);
+            _triangleBuffer.SetData(filt.mesh.triangles);
             CS.SetBuffer(InitEdge, "_VertBufferRW", _vertBuffer);
             CS.SetBuffer(InitEdge, "_TriangleBufferRW", _triangleBuffer);
             CS.Dispatch(InitEdge, faceGS, 1, 1);
@@ -406,6 +407,8 @@ namespace Weathering_GPU
             CS.SetBuffer(UpdateBindingForce, "_VertCounter", _vertCounterBuffer);
             CS.SetBuffer(UpdateBindingForce, "_BlankIndex", _blankIndexBuffer);
             CS.SetBuffer(UpdateBindingForce, "_LockProcess", _lockProcessBuffer);
+            CS.SetBuffer(UpdateBindingForce, "_LengthConstraintBufferRW", _lengthConstraintBuffer);
+            CS.SetBuffer(UpdateBindingForce, "_BendConstraintBufferRW", _bendConstraintBuffer);
 
             // SetVertices
             CS.SetBuffer(SetVertices, "_VertBufferRW", _vertBuffer);
@@ -529,15 +532,15 @@ namespace Weathering_GPU
             switch (VisMode.vis_mode)
             {
                 case 0:
-                    renderer.material = mainMat;
+                    rend.material = mainMat;
                     CS.Dispatch(SetVertColor_Normal, vertGS, 1, 1);
                     break;
                 case 1:
-                    renderer.material = subMat;
+                    rend.material = subMat;
                     CS.Dispatch(SetVertColor_Separate, vertGS, 1, 1);
                     break;
                 default:
-                    renderer.material = subMat;
+                    rend.material = subMat;
                     CS.Dispatch(SetVertColor_Tear, vertGS, 1, 1);
                     break;
             }
@@ -670,8 +673,8 @@ namespace Weathering_GPU
             baseRenderer.material = baseMat;
 
             UnityEngine.Debug.Log(_basePositionBuffer);
-            _basePositionBuffer.SetData(filter.mesh.vertices);
-            _baseNormalBuffer.SetData(filter.mesh.normals);
+            _basePositionBuffer.SetData(filt.mesh.vertices);
+            _baseNormalBuffer.SetData(filt.mesh.normals);
 
             CS.Dispatch(SetBase, vertGS, 1, 1);
             var vertices = new Vector3[baseFilter.mesh.vertexCount];
@@ -687,18 +690,21 @@ namespace Weathering_GPU
                 System.Array.Copy(mf.mesh.triangles, triangles, mf.mesh.triangles.Length);
                 mf.mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
                 mf.mesh.triangles = triangles;
-                filter = mf;
+                filt = mf;
             }
             else
             {
-                filter = this.gameObject.AddComponent<MeshFilter>();
+                filt = this.gameObject.AddComponent<MeshFilter>();
             }
             if (TryGetComponent<MeshRenderer>(out var mr))
-                renderer = mr;
+                rend = mr;
             else
-                renderer = this.gameObject.AddComponent<MeshRenderer>();
-
-
+                rend = this.gameObject.AddComponent<MeshRenderer>();
+            if (TryGetComponent<MeshCollider>(out var mc))
+                coll = mc;
+            else
+                coll = this.gameObject.AddComponent<MeshCollider>();
+            coll.sharedMesh = filt.mesh;
             InitNums();
             InitIndex();
             UpdateGroupSize();
@@ -731,7 +737,7 @@ namespace Weathering_GPU
             CS.Dispatch(ProceedChalking, vertGS, 1, 1);
 
             //CS.SetFloat("length_ratio", 1.25f - 0.25f * Mathf.Cos(Time.time * 0.5f));
-            //CS.Dispatch(PBD_UpdateConstraint, filter.mesh.triangles.Length, 1, 1); // ComputeShaderを実行
+            //CS.Dispatch(PBD_UpdateConstraint, filt.mesh.triangles.Length, 1, 1); // ComputeShaderを実行
 
             PBD_Simulation();
 
@@ -766,8 +772,8 @@ namespace Weathering_GPU
             //UnityEngine.Debug.Log(vertexArr[100].UV);
             //UnityEngine.Debug.Log(vertexArr[100].Col);
 
-            filter.mesh.SetVertexBufferParams(vertNum, layout);
-            filter.mesh.SetVertexBufferData(vertexArr, 0, 0, vertNum);
+            filt.mesh.SetVertexBufferParams(vertNum, layout);
+            filt.mesh.SetVertexBufferData(vertexArr, 0, 0, vertNum);
 
             /*
             var posArr = new Vector3[vertNum];
@@ -784,32 +790,32 @@ namespace Weathering_GPU
             */
             //UnityEngine.Debug.Log(posArr[100]);
 
-            //filter.mesh.Set
-            //filter.mesh.vertices = posArr;
-            //filter.mesh.normals = norArr;
-            //filter.mesh.colors = colArr;
-            //filter.mesh.uv = uvArr;
+            //filt.mesh.Set
+            //filt.mesh.vertices = posArr;
+            //filt.mesh.normals = norArr;
+            //filt.mesh.colors = colArr;
+            //filt.mesh.uv = uvArr;
 
             // 三角形インデックス
             CS.Dispatch(SetTriangles, faceGS, 1, 1); // ComputeShaderを実行
             var triangleArr = new int[faceNum * 3];
             _triangleBuffer.GetData(triangleArr);
-            filter.mesh.SetIndexBufferData(triangleArr, 0, 0, faceNum * 3);
-            //filter.mesh.triangles = triangleArr;
+            filt.mesh.SetIndexBufferData(triangleArr, 0, 0, faceNum * 3);
+            //filt.mesh.triangles = triangleArr;
 
-            filter.mesh.RecalculateNormals();
-            filter.mesh.RecalculateBounds();
+            filt.mesh.RecalculateNormals();
+            filt.mesh.RecalculateBounds();
 
             // Debug
-            if (true)
+            if (false)
             {
-                var edgeArr = new EdgeData[filter.mesh.triangles.Length];
+                var edgeArr = new EdgeData[filt.mesh.triangles.Length];
                 _edgeBuffer.GetData(edgeArr);
-                var constArr = new BendConstraintData[filter.mesh.triangles.Length];
-                _bendConstraintBuffer.GetData(constArr);
+                var constArr = new LengthConstraintData[filt.mesh.triangles.Length];
+                _lengthConstraintBuffer.GetData(constArr);
                 var lockArr = new uint[vertNum];
                 _lockProcessBuffer.GetData(lockArr);
-                //UnityEngine.Debug.Log(filter.mesh.normals[norArr.Length - 1]);
+                //UnityEngine.Debug.Log(filt.mesh.normals[norArr.Length - 1]);
 
                 int count = 0;
                 for (int i = 0; i < vertArr.Length; i++)
@@ -825,12 +831,13 @@ namespace Weathering_GPU
                     };
                     if (vertArr[i].Orig != i)
                     {
-                        UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + vertArr[i].Nor * 0.1f, Color.cyan);
+                        var d = vertArr[edgeArr[edgeArr[vertArr[i].Edge].Next].Vert].Pos - vertArr[i].Pos;
+                        UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + (vertArr[i].Nor + d) * 0.1f, Color.cyan);
 
                     }
                     else
                     {
-                        UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + vertArr[i].Nor * 0.1f, Color.magenta);
+                        UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + vertArr[i].Nor * 0.03f, Color.red);
                         //if (i >= 10365)
                         //    UnityEngine.Debug.Log("fake origin: " + i);
                     }
@@ -839,23 +846,14 @@ namespace Weathering_GPU
                 _blankIndexBuffer.GetData(blankArr);
                 for (int i = 0; i < edgeArr.Length; i++)
                 {
-                    if (edgeArr[i].Stat == 64)
+                    if (vertArr[edgeArr[i].Vert].Status == 32)
                     {
-                        UnityEngine.Debug.Log("Error 64: ");
-                        UnityEngine.Debug.DrawLine(vertArr[edgeArr[i].Vert].Pos, vertArr[edgeArr[edgeArr[i].Next].Vert].Pos, Color.magenta);
+                        UnityEngine.Debug.Log("Error 32: " + i);
+                        //UnityEngine.Debug.DrawLine(vertArr[edgeArr[i].Vert].Pos, vertArr[edgeArr[edgeArr[i].Next].Vert].Pos, Color.magenta);
 
-                    }
-
-                    for (int j = 0; j < blankArr.Length; j++)
-                    {
-                        if (edgeArr[i].Vert == blankArr[j])
-                        {
-                            //UnityEngine.Debug.DrawLine(vertArr[edgeArr[i].Vert].Pos, vertArr[edgeArr[edgeArr[i].Next].Vert].Pos, Color.magenta);
-                            //UnityEngine.Debug.Log("Error: " + i + "/" + j + "/" + blankArr[j]);
-                        }
                     }
                     if (edgeArr[i].Stat == 1)
-                        UnityEngine.Debug.DrawLine(vertArr[edgeArr[i].Vert].Pos, vertArr[edgeArr[edgeArr[i].Next].Vert].Pos, Color.green);
+                        UnityEngine.Debug.DrawLine(vertArr[edgeArr[i].Vert].Pos, vertArr[edgeArr[edgeArr[i].Next].Vert].Pos, Color.magenta);
                 }
                 int lock_counter = 0;
                 for (int i = 0; i < lockArr.Length; i++)
@@ -865,24 +863,33 @@ namespace Weathering_GPU
                         if (lock_counter == 0)
                             locked_verts = new List<int>();
                         lock_counter++;
-                        UnityEngine.Debug.Log("locked: " + i);
+                        //UnityEngine.Debug.Log("locked: " + i);
                         locked_verts.Add(i);
                         //UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + vertArr[i].Nor * 0.1f, Color.magenta);
                     };
                 }
                 for (int i = 0; i < blankArr.Length; i++)
                 {
-                    UnityEngine.Debug.Log("blank[" + i + "]: " + blankArr[i] + "/" + vertArr[blankArr[i]].Status);
+                    //UnityEngine.Debug.Log("blank[" + i + "]: " + blankArr[i] + "/" + vertArr[blankArr[i]].Status);
                 }
-                UnityEngine.Debug.Log("blank_num: " + countArr[1]);
-
+                //UnityEngine.Debug.Log("blank_num: " + countArr[1]);
+                for (int i = 0; i < constArr.Length; i++)
+                {
+                    if (true || vertArr[constArr[i].P0].Status == 32 || vertArr[constArr[i].P1].Status == 32) {
+                        if (edgeArr[i].Pair < i)
+                            UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[constArr[i].P0].Pos), transform.TransformPoint(vertArr[constArr[i].P1].Pos), Color.magenta);
+                        else
+                            UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[constArr[i].P0].Pos + vertArr[constArr[i].P0].Nor * 0.001f), transform.TransformPoint(vertArr[constArr[i].P1].Pos + vertArr[constArr[i].P1].Nor * 0.001f), Color.cyan);
+                    }
+                    //UnityEngine.Debug.Log("blank[" + i + "]: " + blankArr[i] + "/" + vertArr[blankArr[i]].Status);
+                }
                 if (lock_counter > 0)
                 {
-                    UnityEngine.Debug.Log("locked: " + lock_counter);
+                    //UnityEngine.Debug.Log("locked: " + lock_counter);
                 }
                 foreach (var v in locked_verts)
                 {
-                    UnityEngine.Debug.DrawLine(vertArr[v].Pos, vertArr[v].Pos + vertArr[v].Nor * 0.2f, Color.black);
+                    //UnityEngine.Debug.DrawLine(vertArr[v].Pos, vertArr[v].Pos + vertArr[v].Nor * 0.2f, Color.black);
                 }
                 //UnityEngine.Debug.Log("verts: " + vertNum);
 
