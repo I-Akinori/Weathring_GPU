@@ -807,7 +807,7 @@ namespace Weathering_GPU
             filt.mesh.RecalculateBounds();
 
             // Debug
-            if (false)
+            if (true)
             {
                 var edgeArr = new EdgeData[filt.mesh.triangles.Length];
                 _edgeBuffer.GetData(edgeArr);
@@ -829,15 +829,20 @@ namespace Weathering_GPU
                         //UnityEngine.Debug.Log("32: " + i);
                         //UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + vertArr[i].Nor * 0.1f, Color.magenta);
                     };
+                    if (vertArr[i].Status == 2) {
+                        //if (vertArr[i].Direction.magnitude == 0)
+                        UnityEngine.Debug.Log(vertArr[i].Direction.magnitude);
+                        UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[i].Pos), transform.TransformPoint(vertArr[i].Pos + vertArr[i].Direction * 0.05f), Color.red);
+                    }
                     if (vertArr[i].Orig != i)
                     {
-                        var d = vertArr[edgeArr[edgeArr[vertArr[i].Edge].Next].Vert].Pos - vertArr[i].Pos;
-                        UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + (vertArr[i].Nor + d) * 0.1f, Color.cyan);
+                        //var d = vertArr[edgeArr[edgeArr[vertArr[i].Edge].Next].Vert].Pos - vertArr[i].Pos;
+                        //UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + (vertArr[i].Nor + d) * 0.1f, Color.cyan);
 
                     }
                     else
                     {
-                        UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + vertArr[i].Nor * 0.03f, Color.red);
+                        //UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + vertArr[i].Nor * 0.03f, Color.red);
                         //if (i >= 10365)
                         //    UnityEngine.Debug.Log("fake origin: " + i);
                     }
@@ -853,7 +858,7 @@ namespace Weathering_GPU
 
                     }
                     if (edgeArr[i].Stat == 1)
-                        UnityEngine.Debug.DrawLine(vertArr[edgeArr[i].Vert].Pos, vertArr[edgeArr[edgeArr[i].Next].Vert].Pos, Color.magenta);
+                        UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[edgeArr[i].Vert].Pos), transform.TransformPoint(vertArr[edgeArr[edgeArr[i].Next].Vert].Pos), Color.magenta);
                 }
                 int lock_counter = 0;
                 for (int i = 0; i < lockArr.Length; i++)
@@ -875,11 +880,11 @@ namespace Weathering_GPU
                 //UnityEngine.Debug.Log("blank_num: " + countArr[1]);
                 for (int i = 0; i < constArr.Length; i++)
                 {
-                    if (true || vertArr[constArr[i].P0].Status == 32 || vertArr[constArr[i].P1].Status == 32) {
-                        if (edgeArr[i].Pair < i)
-                            UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[constArr[i].P0].Pos), transform.TransformPoint(vertArr[constArr[i].P1].Pos), Color.magenta);
-                        else
-                            UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[constArr[i].P0].Pos + vertArr[constArr[i].P0].Nor * 0.001f), transform.TransformPoint(vertArr[constArr[i].P1].Pos + vertArr[constArr[i].P1].Nor * 0.001f), Color.cyan);
+                    if (vertArr[constArr[i].P0].Status == 32 || vertArr[constArr[i].P1].Status == 32) {
+                        //if (edgeArr[i].Pair < i)
+                        //    UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[constArr[i].P0].Pos), transform.TransformPoint(vertArr[constArr[i].P1].Pos), Color.magenta);
+                        //else
+                        //    UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[constArr[i].P0].Pos + vertArr[constArr[i].P0].Nor * 0.001f), transform.TransformPoint(vertArr[constArr[i].P1].Pos + vertArr[constArr[i].P1].Nor * 0.001f), Color.cyan);
                     }
                     //UnityEngine.Debug.Log("blank[" + i + "]: " + blankArr[i] + "/" + vertArr[blankArr[i]].Status);
                 }

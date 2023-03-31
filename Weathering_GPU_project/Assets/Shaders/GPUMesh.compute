@@ -168,8 +168,20 @@ void ReconnectEdges(uint id) {
 
     if (val1 == 0 && val2 == 0) {
         _EdgeBufferRW[id].stat = 0; _EdgeBufferRW[_EdgeBufferRW[id].pair].stat = 0;
-        _LengthConstraintBufferRW[id].thr = 0.001; _LengthConstraintBufferRW[_EdgeBufferRW[id].pair].thr = 0.001;
-        _BendConstraintBufferRW[id].thr = 0.001; _BendConstraintBufferRW[_EdgeBufferRW[id].pair].thr = 0.001;
+        // 断裂前稜線の長さ制約は片方だけ
+        if (id < _EdgeBufferRW[id].pair) {
+            _LengthConstraintBufferRW[id].thr = 0.001;
+            _LengthConstraintBufferRW[_EdgeBufferRW[id].pair].thr = -1;
+            _BendConstraintBufferRW[id].thr = 0.001; 
+            _BendConstraintBufferRW[_EdgeBufferRW[id].pair].thr = -1;
+
+        }
+        else {
+            _LengthConstraintBufferRW[_EdgeBufferRW[id].pair].thr = -1;
+            _LengthConstraintBufferRW[id].thr = 0.001;
+            _BendConstraintBufferRW[_EdgeBufferRW[id].pair].thr = 0.001;
+            _BendConstraintBufferRW[id].thr = -1;
+        }
         
         uint ev = _EdgeBufferRW[id].vert;
         uint epnv = _EdgeBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].next].vert;
@@ -239,7 +251,14 @@ void ReconnectEdges(uint id) {
                     SwapVertB(_EdgeBufferRW[tmp_e].next, epnv, ev);
 
                     _EdgeBufferRW[tmp_e].vert = ev;
-                    if (_EdgeBufferRW[tmp_e].stat > 0) break;
+                    if (_EdgeBufferRW[tmp_e].stat > 0) { 
+                        // 亀裂の端点なら方向を記録
+                        if (_VertBufferRW[ev].stat == 2)
+                        {
+                            _VertBufferRW[ev].direction = normalize(_VertBufferRW[ev].pos - _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert].pos);
+                        }
+                        break; 
+                    }
                     if (debug_counter++ > 64) {
                         _VertBufferRW[ev].stat = 64;
                         break;
@@ -266,7 +285,14 @@ void ReconnectEdges(uint id) {
                     SwapVertB(_EdgeBufferRW[tmp_e].prev, ev, epnv);
                     SwapVertB(_EdgeBufferRW[tmp_e].next, ev, epnv);
                     _EdgeBufferRW[tmp_e].vert = epnv;
-                    if (_EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].stat > 0) break;
+                    if (_EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].stat > 0) { 
+                        // 亀裂の端点なら方向を記録
+                        if (_VertBufferRW[epnv].stat == 2)
+                        {
+                            _VertBufferRW[epnv].direction = normalize(_VertBufferRW[epnv].pos - _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].vert].pos);
+                        }
+                        break; 
+                    }
                     if (debug_counter++ > 64) {
                         _VertBufferRW[epnv].stat = 64;
                         break;
@@ -354,7 +380,14 @@ void ReconnectEdges(uint id) {
                     SwapVertB(_EdgeBufferRW[tmp_e].next, env, epv);
                     _EdgeBufferRW[tmp_e].vert = epv;
 
-                    if (_EdgeBufferRW[tmp_e].stat > 0) break;
+                    if (_EdgeBufferRW[tmp_e].stat > 0) { 
+                        // 亀裂の端点なら方向を記録
+                        if (_VertBufferRW[epv].stat == 2) 
+                        {
+                            _VertBufferRW[epv].direction = normalize(_VertBufferRW[epv].pos - _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert].pos);
+                        }
+                        break; 
+                    }
                     if (debug_counter++ > 64) {
                         _VertBufferRW[epv].stat = 64;
                         break;
@@ -381,7 +414,14 @@ void ReconnectEdges(uint id) {
                     SwapVertB(_EdgeBufferRW[tmp_e].prev, epv, env);
                     SwapVertB(_EdgeBufferRW[tmp_e].next, epv, env);
                     _EdgeBufferRW[tmp_e].vert = env;
-                    if (_EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].stat > 0) break;
+                    if (_EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].stat > 0) { 
+                        // 亀裂の端点なら方向を記録
+                        if (_VertBufferRW[env].stat == 2)
+                        {
+                            _VertBufferRW[env].direction = normalize(_VertBufferRW[env].pos - _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].vert].pos);
+                        }
+                        break; 
+                    }
                     if (debug_counter++ > 64) {
                         _VertBufferRW[env].stat = 64;
                         break;
@@ -653,7 +693,7 @@ void ProceedChalking
     if (P_ID >= _VertNum) return;
     if (_VertBufferRW[P_ID].stat == 32) return;
 
-    float w = 0.01;
+    float w = 0.005;
 
     _VertBufferRW[P_ID].chalk += w * _delta_time;
 
