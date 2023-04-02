@@ -248,6 +248,9 @@ void ReconnectEdges(uint id) {
                     tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].next;
 
                 } while (tmp_e != _EdgeBufferRW[_EdgeBufferRW[home_e].pair].next);
+                // 錆関係の更新
+                _VertBufferRW[ev].lowest = 0;
+                _VertBufferRW[ev].rust = 0;
             }
             else {
                 // epnvがオリジナルの可能性があるので、evの方を無効化する
@@ -282,12 +285,17 @@ void ReconnectEdges(uint id) {
                     tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].pair;
 
                 } while (tmp_e != home_e);
+                // 錆関係の更新
+                _VertBufferRW[epnv].lowest = 0;
+                _VertBufferRW[epnv].rust = 0;
             }
 
         }
         else {
             // 亀裂の端点は修復後元に戻す
             _VertBufferRW[ev].stat = 0;
+            _VertBufferRW[ev].lowest = 0;
+            _VertBufferRW[ev].rust = 0;
         }
         // 剥落の復元
         // 現在の使い方では，stat = 0 である面の周りしかreconnectしないので意味はない
@@ -377,6 +385,10 @@ void ReconnectEdges(uint id) {
                     tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].next;
 
                 } while (tmp_e != _EdgeBufferRW[_EdgeBufferRW[home_e].pair].next);
+                
+                // 錆関係の更新
+                _VertBufferRW[epv].lowest = 0;
+                _VertBufferRW[epv].rust = 0;
             }
             else {
                 // envがオリジナルの可能性があるので、epvの方を無効化する
@@ -411,11 +423,17 @@ void ReconnectEdges(uint id) {
                     tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].pair;
 
                 } while (tmp_e != home_e);
+
+                // 錆関係の更新
+                _VertBufferRW[env].lowest = 0;
+                _VertBufferRW[env].rust = 0;
             }
         }
         else {
             // 亀裂の端点は修復後元に戻す
             _VertBufferRW[epv].stat = 0;
+            _VertBufferRW[epv].lowest = 0;
+            _VertBufferRW[epv].rust = 0;
         }
         // 剥落の復元
         _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].face].stat = 0;
@@ -739,7 +757,6 @@ void PropagateRust
         _VertBufferRW[P_ID].rust +=
             FlowRust(_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert, P_ID, tmp_e, projected_grav) * 
             _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert].rust_buf;
-        if (_VertBufferRW[P_ID].rust < 0) _VertBufferRW[P_ID].rust = 0;
 
         if (_EdgeBufferRW[tmp_e].stat > 0) {
             // 反時計回処理: 断裂したtmp_e
@@ -749,7 +766,6 @@ void PropagateRust
                 _VertBufferRW[P_ID].rust +=
                     FlowRust(_EdgeBufferRW[tmp_e].vert, P_ID, tmp_e, projected_grav) *
                     _VertBufferRW[_EdgeBufferRW[tmp_e].vert].rust_buf;
-                if (_VertBufferRW[P_ID].rust < 0) _VertBufferRW[P_ID].rust = 0;
 
                 tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].prev;
 
@@ -758,14 +774,18 @@ void PropagateRust
             _VertBufferRW[P_ID].rust +=
                 FlowRust(_EdgeBufferRW[tmp_e].vert, P_ID, tmp_e, projected_grav) *
                 _VertBufferRW[_EdgeBufferRW[tmp_e].vert].rust_buf;
-            if (_VertBufferRW[P_ID].rust < 0) _VertBufferRW[P_ID].rust = 0;
             break;
         }
         // 反時計回り処理: 断裂したtmp_e 
 
         tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].next;
     } while (tmp_e != home_e);
+    // 逆再生時は無条件で少し減る
+    if (_delta_time < 0)
+        _VertBufferRW[P_ID].rust += _delta_time * 0.1;
 
+    if (_VertBufferRW[P_ID].rust > 100) _VertBufferRW[P_ID].rust = 100;
+    if (_VertBufferRW[P_ID].rust < 0) _VertBufferRW[P_ID].rust = 0;
 }
 
 #pragma kernel SearchAroundVertex_Template
@@ -824,7 +844,7 @@ void TestPBD
     _LengthConstraintBufferRW[P_ID].p0 = _EdgeBufferRW[P_ID].vert;
     _LengthConstraintBufferRW[P_ID].p1 = _EdgeBufferRW[_EdgeBufferRW[P_ID].next].vert;
     _LengthConstraintBufferRW[P_ID].stiff = 1;
-    _LengthConstraintBufferRW[P_ID].offset = length(_VertBufferRW[_LengthConstraintBufferRW[P_ID].p0].pos - _VertBufferRW[_LengthConstraintBufferRW[P_ID].p1].pos) *0.98;
+    _LengthConstraintBufferRW[P_ID].offset = length(_VertBufferRW[_LengthConstraintBufferRW[P_ID].p0].pos - _VertBufferRW[_LengthConstraintBufferRW[P_ID].p1].pos);
     _LengthConstraintBufferRW[P_ID].offset0 = length(_VertBufferRW[_LengthConstraintBufferRW[P_ID].p0].pos0 - _VertBufferRW[_LengthConstraintBufferRW[P_ID].p1].pos0);
 
     if (p != -1 || (int)P_ID < p) {
@@ -838,8 +858,8 @@ void TestPBD
     _BendConstraintBufferRW[P_ID].p2 = _EdgeBufferRW[_EdgeBufferRW[P_ID].prev].vert;
     _BendConstraintBufferRW[P_ID].p3 = _EdgeBufferRW[_EdgeBufferRW[_EdgeBufferRW[P_ID].pair].prev].vert;
     _BendConstraintBufferRW[P_ID].stiff = 0.95;
-    _BendConstraintBufferRW[P_ID].offset = sin(_EdgeBufferRW[P_ID].angle / 2) + 0.25;// *abs(dot(normalize(_VertBufferRW[_BendConstraintBufferRW[P_ID].p0].pos - _VertBufferRW[_BendConstraintBufferRW[P_ID].p1].pos), float3(1, 0, 0)));
-    _BendConstraintBufferRW[P_ID].offset0 = sin(_EdgeBufferRW[P_ID].angle / 2);
+    _BendConstraintBufferRW[P_ID].offset = - sin(_EdgeBufferRW[P_ID].angle / 2);// *abs(dot(normalize(_VertBufferRW[_BendConstraintBufferRW[P_ID].p0].pos - _VertBufferRW[_BendConstraintBufferRW[P_ID].p1].pos), float3(1, 0, 0)));
+    _BendConstraintBufferRW[P_ID].offset0 = - sin(_EdgeBufferRW[P_ID].angle / 2);
     if (p != -1 && (int)P_ID < p) {
         _BendConstraintBufferRW[P_ID].thr = 0.001;
     }
@@ -858,7 +878,8 @@ void PBD_UpdateConstraint
     const unsigned int P_ID = DTid.x;
     if (P_ID >= _EdgeNum) return;
 
-    _LengthConstraintBufferRW[P_ID].offset = length(_VertBufferRW[_LengthConstraintBufferRW[P_ID].p0].pos0 - _VertBufferRW[_LengthConstraintBufferRW[P_ID].p1].pos0) * length_ratio;
+    _LengthConstraintBufferRW[P_ID].offset = _LengthConstraintBufferRW[P_ID].offset0 * (1.0 - _FaceBufferRW[_EdgeBufferRW[P_ID].face].contraction * 0.0001);
+    _BendConstraintBufferRW[P_ID].offset = _BendConstraintBufferRW[P_ID].offset0 + _FaceBufferRW[_EdgeBufferRW[P_ID].face].contraction * 0.001;
 }
 
 #pragma kernel PBD_StartFrame
@@ -900,8 +921,8 @@ void PBD_Itteration_L
     float3 n01 = v0.ass - v1.ass;
     float C_Val = length(n01) - _LengthConstraintBufferRW[P_ID].offset;
     // reverseがONならoffsetは初期状態に
-    if (_delta_time < 0)
-        C_Val = length(n01) - _LengthConstraintBufferRW[P_ID].offset0;
+    //if (_delta_time < 0)
+    //    C_Val = length(n01) - _LengthConstraintBufferRW[P_ID].offset0;
 
     if (abs(C_Val) < _LengthConstraintBufferRW[P_ID].thr) return;
 
@@ -956,8 +977,8 @@ void PBD_Itteration_B
 
     float offset = _BendConstraintBufferRW[P_ID].offset;
     // reverseがONならoffsetは初期状態に
-    if (_delta_time < 0)
-        offset = _BendConstraintBufferRW[P_ID].offset0;
+    //if (_delta_time < 0)
+    //    offset = _BendConstraintBufferRW[P_ID].offset0;
 
     const float offset0 = L0 * sqrt((1 + offset) / 2) * (2.0 / 4);
     const float offset1 = L1 * sqrt((1 + offset) / 2) * (2.0 / 4);
@@ -1945,8 +1966,9 @@ void TearEdge
                     SwapVertB(_EdgeBufferRW[groupL[i]].prev, _EdgeBufferRW[groupL[i]].vert, nvi);
                     _EdgeBufferRW[groupL[i]].vert = nvi;
                 }
+
                 if (dot(_gravity.xyz, dL) > 0) {
-                    _VertBufferRW[nvi].rust += 100 * dot(_gravity.xyz, dL);
+                    _VertBufferRW[nvi].rust += 100;// *dot(_gravity.xyz, dL);
                     if (_VertBufferRW[ei.vert].lowest) {
                         _VertBufferRW[ei.vert].lowest = false;
                         _VertBufferRW[nvi].lowest = true;
@@ -1954,7 +1976,7 @@ void TearEdge
                 }
                 else {
                     _VertBufferRW[nvi].rust = _VertBufferRW[ei.vert].rust;
-                    _VertBufferRW[ei.vert].rust += 100 * dot(_gravity.xyz, -dL);
+                    _VertBufferRW[ei.vert].rust += 100;// * dot(_gravity.xyz, -dL);
                     if (_VertBufferRW[ei.vert].lowest) {
                         _VertBufferRW[ei.vert].lowest = true;
                         _VertBufferRW[nvi].lowest = false;
@@ -1974,7 +1996,7 @@ void TearEdge
                     _EdgeBufferRW[groupR[i]].vert = nvi;
                 }
                 if (dot(_gravity.xyz, dR) > 0) {
-                    _VertBufferRW[nvi].rust += 100 * dot(_gravity.xyz, dR);
+                    _VertBufferRW[nvi].rust += 100;// * dot(_gravity.xyz, dR);
                     if (_VertBufferRW[ei.vert].lowest) {
                         _VertBufferRW[ei.vert].lowest = false;
                         _VertBufferRW[nvi].lowest = true;
@@ -1982,7 +2004,7 @@ void TearEdge
                 }
                 else {
                     _VertBufferRW[nvi].rust = _VertBufferRW[ei.vert].rust;
-                    _VertBufferRW[ei.vert].rust += 100 * dot(_gravity.xyz, -dR);
+                    _VertBufferRW[ei.vert].rust += 100;// * dot(_gravity.xyz, -dR);
                     if (_VertBufferRW[ei.vert].lowest) {
                         _VertBufferRW[ei.vert].lowest = true;
                         _VertBufferRW[nvi].lowest = false;
@@ -2080,7 +2102,7 @@ void TearEdge
                     _EdgeBufferRW[groupL[i]].vert = nvi;
                 }
                 if (dot(_gravity.xyz, dL) > 0) {
-                    _VertBufferRW[nvi].rust += 100 * dot(_gravity.xyz, dL);
+                    _VertBufferRW[nvi].rust += 100;// * dot(_gravity.xyz, dL);
                     if (_VertBufferRW[ep.vert].lowest) {
                         _VertBufferRW[ep.vert].lowest = false;
                         _VertBufferRW[nvi].lowest = true;
@@ -2088,7 +2110,7 @@ void TearEdge
                 }
                 else {
                     _VertBufferRW[nvi].rust = _VertBufferRW[ep.vert].rust;
-                    _VertBufferRW[ep.vert].rust += 100 * dot(_gravity.xyz, -dL);
+                    _VertBufferRW[ep.vert].rust += 100;// * dot(_gravity.xyz, -dL);
                     if (_VertBufferRW[ep.vert].lowest) {
                         _VertBufferRW[ep.vert].lowest = true;
                         _VertBufferRW[nvi].lowest = false;
@@ -2108,7 +2130,7 @@ void TearEdge
                     _EdgeBufferRW[groupR[i]].vert = nvi;
                 }
                 if (dot(_gravity.xyz, dR) > 0) {
-                    _VertBufferRW[nvi].rust += 100 * dot(_gravity.xyz, dR);
+                    _VertBufferRW[nvi].rust += 100;// * dot(_gravity.xyz, dR);
                     if (_VertBufferRW[ep.vert].lowest) {
                         _VertBufferRW[ep.vert].lowest = false;
                         _VertBufferRW[nvi].lowest = true;
@@ -2116,7 +2138,7 @@ void TearEdge
                 }
                 else {
                     _VertBufferRW[nvi].rust = _VertBufferRW[ep.vert].rust;
-                    _VertBufferRW[ep.vert].rust += 100 * dot(_gravity.xyz, -dR);
+                    _VertBufferRW[ep.vert].rust += 100;// * dot(_gravity.xyz, -dR);
                     if (_VertBufferRW[ep.vert].lowest) {
                         _VertBufferRW[ep.vert].lowest = true;
                         _VertBufferRW[nvi].lowest = false;
