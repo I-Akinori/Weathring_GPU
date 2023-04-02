@@ -2,6 +2,7 @@ struct LengthConstraint {
     uint p0;
     uint p1;
     float offset;
+    float offset0;
     float stiff;
     float thr;      // if thr < 0, disable the constraint
 };
@@ -12,6 +13,7 @@ struct BendConstraint {
     uint p2;
     uint p3;
     float offset;
+    float offset0;
     float stiff;
     float thr;
 };
@@ -51,7 +53,7 @@ struct Edge {
     uint pair;   // HalfEdge
     uint face;   // Face
     uint vert;   // Vertex
-    uint stat;   // 0: connected, 1: tore, 2: no pair
+    uint stat;   // 0: connected, 1: no pair, 2: tore, 3: connected crack
 
     float angle;
     float liftingForce;

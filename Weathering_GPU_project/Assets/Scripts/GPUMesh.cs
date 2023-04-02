@@ -39,6 +39,7 @@ namespace Weathering_GPU
             public uint P0; // 端点1
             public uint P1; // 端点2
             public float Offset;
+            public float Offset0;
             public float Stiff;
             public float Thr;
         };
@@ -49,6 +50,7 @@ namespace Weathering_GPU
             public uint P2; // 端点3
             public uint P3; // 端点4
             public float Offset;
+            public float Offset0;
             public float Stiff;
             public float Thr;
         };
@@ -724,7 +726,7 @@ namespace Weathering_GPU
         void Update()
         {
 
-            CS.SetFloat("_delta_time", Time.deltaTime * SimulationSpeedSlider.SliderValue);
+            CS.SetFloat("_delta_time", Time.deltaTime * SimulationSpeedSlider.SliderValue * (ReverseToggle._reverse ? - 1 : 1));
 
             // GPUで頂点が追加された場合、vertNum以上のIDに対して参照されうるのでedgeNumで固定する
             _lockProcessBuffer.SetData(new uint[edgeNum]);
@@ -831,8 +833,7 @@ namespace Weathering_GPU
                     };
                     if (vertArr[i].Status == 2) {
                         //if (vertArr[i].Direction.magnitude == 0)
-                        UnityEngine.Debug.Log(vertArr[i].Direction.magnitude);
-                        UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[i].Pos), transform.TransformPoint(vertArr[i].Pos + vertArr[i].Direction * 0.05f), Color.red);
+                        //UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[i].Pos), transform.TransformPoint(vertArr[i].Pos + vertArr[i].Direction * 0.05f), Color.red);
                     }
                     if (vertArr[i].Orig != i)
                     {
@@ -857,7 +858,7 @@ namespace Weathering_GPU
                         //UnityEngine.Debug.DrawLine(vertArr[edgeArr[i].Vert].Pos, vertArr[edgeArr[edgeArr[i].Next].Vert].Pos, Color.magenta);
 
                     }
-                    if (edgeArr[i].Stat == 1)
+                    if (edgeArr[i].Stat == 3)
                         UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[edgeArr[i].Vert].Pos), transform.TransformPoint(vertArr[edgeArr[edgeArr[i].Next].Vert].Pos), Color.magenta);
                 }
                 int lock_counter = 0;
