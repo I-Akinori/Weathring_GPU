@@ -1,9 +1,11 @@
-Shader "Custom/vertex_color"
+Shader "Custom/Paint"
 {
     Properties
     {
         _Color("Color", Color) = (1,1,1,1)
         _MainTex("Albedo (RGB)", 2D) = "white" {}
+        _NormalTex("Normal", 2D) = "bump" {}
+        _NormalScale("Normal Scale", Range(0, 1)) = 1.0
         _Glossiness("Smoothness", Range(0,1)) = 0.5
         _Metallic("Metallic", Range(0,1)) = 0.0
     }
@@ -38,6 +40,8 @@ Shader "Custom/vertex_color"
             half _Glossiness;
             half _Metallic;
             fixed4 _Color;
+            sampler2D _NormalTex;
+            half _NormalScale;
 
             // Add instancing support for this shader. You need to check 'Enable Instancing' on materials that use the shader.
             // See https://docs.unity3d.com/Manual/GPUInstancing.html for more information about instancing.
@@ -79,9 +83,9 @@ Shader "Custom/vertex_color"
                 o.Smoothness = g;
                 o.Alpha = c.a;
 
-                //o.Metallic = _Metallic;
-                //o.Smoothness = _Glossiness;
-                //o.Albedo = IN.vertColor.rgb;
+                fixed4 n = tex2D(_NormalTex, IN.uv_MainTex);
+                //o.Albedo = n.xyz;
+                o.Normal = UnpackScaleNormal(n, _NormalScale);
             }
             ENDCG
         }
