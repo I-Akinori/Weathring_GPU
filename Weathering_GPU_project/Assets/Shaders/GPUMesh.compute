@@ -193,6 +193,7 @@ void ReconnectEdges(uint id) {
                     vertex_list[count++] = _EdgeBufferRW[tmp_e].vert;
                 }
 
+                // evがOnEdgeの場合はモデルの端に到達するので，逆回りでモデルの端まで探す
                 if (_EdgeBufferRW[tmp_e].stat == 1) {
                     vertex_list[count++] = _EdgeBufferRW[home_e].vert;
                     tmp_e = home_e;
@@ -211,10 +212,14 @@ void ReconnectEdges(uint id) {
                 };
             } while (tmp_e != _EdgeBufferRW[_EdgeBufferRW[home_e].pair].next);
 
+            // statはすべて頂点数(亀裂数) に
+            // statは亀裂数 + 1が保存されるが、この後に亀裂が1本減るので+1は要らない
+            uint new_stat = count;
+            // ただしonEdgeの場合にはstat==2 (亀裂端点)になることは許さないので 1にする
+            if (_VertBufferRW[ev].onEdge == 1 && count == 2)
+                new_stat = 1;
             for (uint i = 0; i < count; i++) {
-                // statはすべて頂点数(亀裂数) に
-                // statは亀裂数 + 1が保存されるが、この後に亀裂が1本減るので+1は要らない
-                _VertBufferRW[vertex_list[i]].stat = count;
+                _VertBufferRW[vertex_list[i]].stat = new_stat;
             }
 
             // 頂点情報の更新 ev or epnvどちらかを欠番に登録 & 現状のstatを32に
@@ -307,6 +312,9 @@ void ReconnectEdges(uint id) {
             _FaceBufferRW[_EdgeBufferRW[id].face].stat = 0;
             _LengthConstraintBufferRW[_EdgeBufferRW[id].next].thr = 0.001;
             _LengthConstraintBufferRW[_EdgeBufferRW[id].prev].thr = 0.001;
+            _VertBufferRW[_EdgeBufferRW[id].vert].w = 1;
+            _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].next].vert].w = 1;
+            _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].prev].vert].w = 1;
         };
 
         _EdgeBufferRW[id].stat = 0; _EdgeBufferRW[_EdgeBufferRW[id].pair].stat = 0;
@@ -352,13 +360,17 @@ void ReconnectEdges(uint id) {
                 };
             } while (tmp_e != _EdgeBufferRW[_EdgeBufferRW[home_e].pair].next);
 
+            // statはすべて頂点数(亀裂数) に
+            // statは亀裂数 + 1が保存されるが、この後に亀裂が1本減るので+1は要らない
+            uint new_stat = count;
+            // ただしonEdgeの場合にはstat==2 (亀裂端点)になることは許さないので 1にする
+            if (_VertBufferRW[epv].onEdge == 1 && count == 2)
+                new_stat = 1;
             for (uint i = 0; i < count; i++) {
-                // statはすべて頂点数 (亀裂数) に
-                // statは亀裂数 + 1が保存されるが、この後に亀裂が1本減るので+1は要らない
-                _VertBufferRW[vertex_list[i]].stat = count;
+                _VertBufferRW[vertex_list[i]].stat = new_stat;
             }
 
-            // 頂点情報の更新 ev or epnvどちらかを欠番に登録 & 現状のstatを32に
+            // 頂点情報の更新 epv or envどちらかを欠番に登録 & 現状のstatを32に
             if (_VertBufferRW[epv].orig == epv) {
                 // epvがオリジナルなので、envの方を無効化
                 // 反時計回り探索
@@ -448,6 +460,9 @@ void ReconnectEdges(uint id) {
             _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].face].stat = 0;
             _LengthConstraintBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].next].thr = 0.001;
             _LengthConstraintBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].prev].thr = 0.001;
+            _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].vert].w = 1;
+            _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].next].vert].w = 1;
+            _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].prev].vert].w = 1;
         };
     }
 }
@@ -873,7 +888,7 @@ void TestPBD
     _BendConstraintBufferRW[P_ID].stiff = 0.95;
     _BendConstraintBufferRW[P_ID].offset = - sin(_EdgeBufferRW[P_ID].angle / 2);// *abs(dot(normalize(_VertBufferRW[_BendConstraintBufferRW[P_ID].p0].pos - _VertBufferRW[_BendConstraintBufferRW[P_ID].p1].pos), float3(1, 0, 0)));
     _BendConstraintBufferRW[P_ID].offset0 = - sin(_EdgeBufferRW[P_ID].angle / 2);
-    if (p != -1 && (int)P_ID < p) {
+    if (_EdgeBufferRW[P_ID].stat == 0 && (int)P_ID < p) {
         _BendConstraintBufferRW[P_ID].thr = 0.001;
     }
     else {
@@ -1709,7 +1724,6 @@ void SeparateVertex
                         return;
                     tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].prev;
                 }
-                _LengthConstraintBufferRW[tmp_e].thr = 0.001; // ペアがなくても長さ制約ON 
                 break;
             }
             tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].next;
@@ -1720,7 +1734,41 @@ void SeparateVertex
         _VertBufferRW[P_ID].w = 0.0;
         _VertBufferRW[P_ID].pos = _VertBufferRW[P_ID].pos0;
 
-        // 
+        /*
+        do {
+            // 反時計回り
+            if (_EdgeBufferRW[tmp_e].stat == 1) {
+                _LengthConstraintBufferRW[tmp_e].thr = 0.001; // モデルの縁でも長さ制約はON，ただし断裂まで片方だけに設定
+                // モデルの縁に来たら時計回り
+                tmp_e = _EdgeBufferRW[home_e].prev;
+
+                while (_EdgeBufferRW[tmp_e].stat != 1) {
+                    tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].prev;
+                    // 長さ制約OFF
+                    _LengthConstraintBufferRW[tmp_e].thr = -1;
+                    _LengthConstraintBufferRW[_EdgeBufferRW[tmp_e].pair].thr = -1;
+                    _BendConstraintBufferRW[tmp_e].thr = -1;
+                    _BendConstraintBufferRW[_EdgeBufferRW[tmp_e].pair].thr = -1;
+                    _BendConstraintBufferRW[_EdgeBufferRW[tmp_e].next].thr = -1;
+                    if (_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].stat != 2)
+                        _BendConstraintBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].pair].thr = -1;
+
+                }
+                _LengthConstraintBufferRW[tmp_e].thr = 0.001; // ペアがなくても長さ制約ON 
+                break;
+            }
+            // 長さ制約OFF
+            _LengthConstraintBufferRW[tmp_e].thr = -1;
+            _LengthConstraintBufferRW[_EdgeBufferRW[tmp_e].pair].thr = -1;
+            _BendConstraintBufferRW[tmp_e].thr = -1;
+            _BendConstraintBufferRW[_EdgeBufferRW[tmp_e].pair].thr = -1;
+            _BendConstraintBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].prev].thr = -1;
+            if (_EdgeBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].prev].stat != 2)
+                _BendConstraintBufferRW[_EdgeBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].prev].pair].thr = -1;
+
+            tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].next;
+        } while (tmp_e != home_e);
+        */
     }
     else {
         if (vi.bond > vi.liftingForce)  return;
@@ -1736,6 +1784,8 @@ void SeparateVertex
         int tmp_e = home_e;
         uint count = 0;
 
+        // 制約はそのままにしておく
+        /*
         do {
             // 反時計回り
             if (_EdgeBufferRW[tmp_e].stat == 1) {
@@ -1747,19 +1797,26 @@ void SeparateVertex
                     tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].prev;
                     if (_LengthConstraintBufferRW[_EdgeBufferRW[tmp_e].pair].thr < 0)
                         _LengthConstraintBufferRW[tmp_e].thr = 0.001; // 長さ制約ON
-                    if (_BendConstraintBufferRW[_EdgeBufferRW[tmp_e].pair].thr < 0)
+                    if (_BendConstraintBufferRW[_EdgeBufferRW[tmp_e].pair].thr < 0 && _EdgeBufferRW[tmp_e].stat == 0)
                         _BendConstraintBufferRW[tmp_e].thr = 0.001; // ペアが存在している場合に曲げ制約ON
+                    if (_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].stat == 0 &&
+                        _BendConstraintBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].pair].thr < 0)
+                        _BendConstraintBufferRW[_EdgeBufferRW[tmp_e].next].thr = 0.001; // ペアが存在している場合に曲げ制約ON
                 }
                 _LengthConstraintBufferRW[tmp_e].thr = 0.001; // ペアがなくても長さ制約ON 
                 break;
             }
             if (_LengthConstraintBufferRW[_EdgeBufferRW[tmp_e].pair].thr < 0)
                 _LengthConstraintBufferRW[tmp_e].thr = 0.001; // モデルの縁でも長さ制約はON，ただし断裂まで片方だけに設定
-            if (_BendConstraintBufferRW[_EdgeBufferRW[tmp_e].pair].thr < 0)
+            if (_BendConstraintBufferRW[_EdgeBufferRW[tmp_e].pair].thr < 0 && _EdgeBufferRW[tmp_e].stat == 0)
                 _BendConstraintBufferRW[tmp_e].thr = 0.001; // ペアが存在している場合に曲げ制約ON，こちらも片方だけ
+            if (_EdgeBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].prev].stat == 0 &&
+                _BendConstraintBufferRW[_EdgeBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].prev].pair].thr < 0)
+                _BendConstraintBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].prev].thr = 0.001; // ペアが存在している場合に曲げ制約ON
 
             tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].next;
         } while (tmp_e != home_e);
+        */
     }
 }
 
@@ -1970,8 +2027,27 @@ void TearEdge
         //if (_EdgeBufferRW[ep.prev].pair != -1)  _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[ep.prev].pair].face].contraction *= rp;
         //if (ep.pair != -1)  _FaceBufferRW[_EdgeBufferRW[ep.pair].face].contraction *= rp;
         //_FaceBufferRW[ei.face].contraction *= rp;
+        
+        // 縁は亀裂の端点にならず，即分割される
+        if (_VertBufferRW[ei.vert].stat == 2 && _VertBufferRW[ei.vert].onEdge == 1) {
+            _VertBufferRW[ei.vert].stat = 3;
+            // 反対側が亀裂端点でないなら，この稜線は連結稜線扱い
+            if (_VertBufferRW[ep.vert].stat == 3) {
+                _EdgeBufferRW[P_ID].stat = 3;
+                _EdgeBufferRW[ei.pair].stat = 3;
+            }
+        }
+        if (_VertBufferRW[ep.vert].stat == 2 && _VertBufferRW[ep.vert].onEdge == 1) {
+            _VertBufferRW[ep.vert].stat = 3;
+            // 反対側が亀裂端点でないなら，この稜線は連結稜線扱い
+            // モデルの角で両方ともOnEdgeにかかるような稜線もここで処理対象となる
+            if (_VertBufferRW[ei.vert].stat == 3) {
+                _EdgeBufferRW[P_ID].stat = 3;
+                _EdgeBufferRW[ei.pair].stat = 3;
+            }
+        }
 
-        if (_VertBufferRW[ei.vert].stat > 2 && _VertBufferRW[ei.vert].onEdge == 0) // ei.vertから見てこれが二本目以上の断裂，頂点を分割する
+        if (_VertBufferRW[ei.vert].stat > 2) // ei.vertから見てこれが二本目以上の断裂，頂点を分割する
         {
             if (_VertBufferRW[ei.vert].lowest && dot(_gravity.xyz, _VertBufferRW[ep.vert].pos - _VertBufferRW[ei.vert].pos) > 0)
                 _VertBufferRW[ei.vert].lowest = false;
@@ -2010,9 +2086,9 @@ void TearEdge
             // 反時計回り探索 groupRは断裂した稜線を含む
             do {
                 if (_EdgeBufferRW[tmp_e].stat == 1) {
-                    dR *= 0;
-                    countR = 0;
-                    break;
+                    //dR *= 0;
+                    //countR = 0;
+                    //break;
                 }
                 dR += _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert].pos - _VertBufferRW[_EdgeBufferRW[tmp_e].vert].pos;
                 if (tmp_e != home_e) {
@@ -2022,11 +2098,12 @@ void TearEdge
                 tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].next;
             } while (_EdgeBufferRW[tmp_e].stat == 0);
             tore_e = tmp_e;
-            if (_EdgeBufferRW[tore_e].pair != -1) {
+            if (true || _EdgeBufferRW[tore_e].pair != -1) {
                 groupR[countR++] = tore_e;
                 dR += _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert].pos - _VertBufferRW[_EdgeBufferRW[tmp_e].vert].pos;
             }
 
+            /*
             // 時計回り探索 さっき断裂した半稜線は含むが，断裂していた半稜線は含まない
             groupL[countL++] = home_e;
             tmp_e = _EdgeBufferRW[home_e].prev;
@@ -2041,10 +2118,11 @@ void TearEdge
                 dL += _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert].pos - _VertBufferRW[_EdgeBufferRW[tmp_e].vert].pos;
                 groupL[countL++] = tmp_e;
                 tmp_e = _EdgeBufferRW[tmp_e].prev;
-            }
+            }*/
             dR = normalize(dR);
-            dL = normalize(dL);
+            //dL = normalize(dL);
 
+            /*
             if (countR == 0) {
                 // edge.vertの付け替え
                 _VertBufferRW[nvi].edge = groupL[0];
@@ -2102,10 +2180,36 @@ void TearEdge
                         _VertBufferRW[nvi].lowest = false;
                     }
                 }
+            }*/
+            _VertBufferRW[nvi].edge = groupR[0];
+            for (int i = 0; i < countR; i++) {
+                SwapVertL(groupR[i], _EdgeBufferRW[groupR[i]].vert, nvi);
+                SwapVertL(_EdgeBufferRW[groupR[i]].next, _EdgeBufferRW[groupR[i]].vert, nvi);
+                SwapVertL(_EdgeBufferRW[groupR[i]].prev, _EdgeBufferRW[groupR[i]].vert, nvi);
+
+                SwapVertB(groupR[i], _EdgeBufferRW[groupR[i]].vert, nvi);
+                SwapVertB(_EdgeBufferRW[groupR[i]].next, _EdgeBufferRW[groupR[i]].vert, nvi);
+                SwapVertB(_EdgeBufferRW[groupR[i]].prev, _EdgeBufferRW[groupR[i]].vert, nvi);
+                _EdgeBufferRW[groupR[i]].vert = nvi;
+            }
+            if (dot(_gravity.xyz, dR) > 0) {
+                _VertBufferRW[nvi].rust += 100;// * dot(_gravity.xyz, dR);
+                if (_VertBufferRW[ei.vert].lowest) {
+                    _VertBufferRW[ei.vert].lowest = false;
+                    _VertBufferRW[nvi].lowest = true;
+                }
+            }
+            else {
+                _VertBufferRW[nvi].rust = _VertBufferRW[ei.vert].rust;
+                _VertBufferRW[ei.vert].rust += 100;// * dot(_gravity.xyz, -dR);
+                if (_VertBufferRW[ei.vert].lowest) {
+                    _VertBufferRW[ei.vert].lowest = true;
+                    _VertBufferRW[nvi].lowest = false;
+                }
             }
         } // ei.vertの頂点分割処理
 
-        if (_VertBufferRW[ep.vert].stat > 2 && _VertBufferRW[ep.vert].onEdge == 0) // ei.vertから見てこれが二本目以上の断裂，頂点を分割する
+        if (_VertBufferRW[ep.vert].stat > 2) // ei.vertから見てこれが二本目以上の断裂，頂点を分割する
         {
             if (_VertBufferRW[ep.vert].lowest && dot(_gravity.xyz, _VertBufferRW[ep.vert].pos - _VertBufferRW[ep.vert].pos) > 0)
                 _VertBufferRW[ep.vert].lowest = false;
@@ -2145,8 +2249,8 @@ void TearEdge
             // 反時計回り探索 groupRは断裂した稜線を含む
             do {
                 if (_EdgeBufferRW[tmp_e].stat == 1) {
-                    dR *= 0;
-                    countR = 0;
+                    //dR *= 0;
+                    //countR = 0;
                     break;
                 }
                 dR += _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert].pos - _VertBufferRW[_EdgeBufferRW[tmp_e].vert].pos;
@@ -2157,11 +2261,12 @@ void TearEdge
                 tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].next;
             } while (_EdgeBufferRW[tmp_e].stat == 0);
             tore_e = tmp_e;
-            if (_EdgeBufferRW[tore_e].pair != -1) {
+            if (true || _EdgeBufferRW[tore_e].pair != -1) {
                 groupR[countR++] = tore_e;
                 dR += _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert].pos - _VertBufferRW[_EdgeBufferRW[tmp_e].vert].pos;
             }
 
+            /*
             // 時計回り探索 さっき断裂した半稜線は含むが，断裂していた半稜線は含まない
             groupL[countL++] = home_e;
             tmp_e = _EdgeBufferRW[home_e].prev;
@@ -2176,10 +2281,11 @@ void TearEdge
                 dL += _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert].pos - _VertBufferRW[_EdgeBufferRW[tmp_e].vert].pos;
                 groupL[countL++] = tmp_e;
                 tmp_e = _EdgeBufferRW[tmp_e].prev;
-            }
+            }*/
             dR = normalize(dR);
-            dL = normalize(dL);
+            //dL = normalize(dL);
 
+            /*
             if (countR == 0) {
                 // edge.vertの付け替え
                 _VertBufferRW[nvi].edge = groupL[0];
@@ -2236,6 +2342,32 @@ void TearEdge
                         _VertBufferRW[nvi].lowest = false;
                     }
                 }
+            }*/
+            _VertBufferRW[nvi].edge = groupR[0];
+            for (int i = 0; i < countR; i++) {
+                SwapVertL(groupR[i], _EdgeBufferRW[groupR[i]].vert, nvi);
+                SwapVertL(_EdgeBufferRW[groupR[i]].next, _EdgeBufferRW[groupR[i]].vert, nvi);
+                SwapVertL(_EdgeBufferRW[groupR[i]].prev, _EdgeBufferRW[groupR[i]].vert, nvi);
+
+                SwapVertB(groupR[i], _EdgeBufferRW[groupR[i]].vert, nvi);
+                SwapVertB(_EdgeBufferRW[groupR[i]].next, _EdgeBufferRW[groupR[i]].vert, nvi);
+                SwapVertB(_EdgeBufferRW[groupR[i]].prev, _EdgeBufferRW[groupR[i]].vert, nvi);
+                _EdgeBufferRW[groupR[i]].vert = nvi;
+            }
+            if (dot(_gravity.xyz, dR) > 0) {
+                _VertBufferRW[nvi].rust += 100;// * dot(_gravity.xyz, dR);
+                if (_VertBufferRW[ep.vert].lowest) {
+                    _VertBufferRW[ep.vert].lowest = false;
+                    _VertBufferRW[nvi].lowest = true;
+                }
+            }
+            else {
+                _VertBufferRW[nvi].rust = _VertBufferRW[ep.vert].rust;
+                _VertBufferRW[ep.vert].rust += 100;// * dot(_gravity.xyz, -dR);
+                if (_VertBufferRW[ep.vert].lowest) {
+                    _VertBufferRW[ep.vert].lowest = true;
+                    _VertBufferRW[nvi].lowest = false;
+                }
             }
         } // ep.vertの頂点分割処理
 
@@ -2248,6 +2380,9 @@ void TearEdge
             _VertBufferRW[_EdgeBufferRW[P_ID].vert].pos = _VertBufferRW[_EdgeBufferRW[P_ID].vert].pos0;
             _VertBufferRW[_EdgeBufferRW[ei.next].vert].pos = _VertBufferRW[_EdgeBufferRW[ei.next].vert].pos0;
             _VertBufferRW[_EdgeBufferRW[ei.prev].vert].pos = _VertBufferRW[_EdgeBufferRW[ei.prev].vert].pos0;
+            _VertBufferRW[_EdgeBufferRW[P_ID].vert].w = 0;
+            _VertBufferRW[_EdgeBufferRW[ei.next].vert].w = 0;
+            _VertBufferRW[_EdgeBufferRW[ei.prev].vert].w = 0;
         }
         // 剥落判定
         if (_EdgeBufferRW[ep.next].stat > 0 && _EdgeBufferRW[ep.prev].stat > 0) {
@@ -2258,6 +2393,9 @@ void TearEdge
             _VertBufferRW[_EdgeBufferRW[ei.pair].vert].pos = _VertBufferRW[_EdgeBufferRW[ei.pair].vert].pos0;
             _VertBufferRW[_EdgeBufferRW[ep.next].vert].pos = _VertBufferRW[_EdgeBufferRW[ep.next].vert].pos0;
             _VertBufferRW[_EdgeBufferRW[ep.prev].vert].pos = _VertBufferRW[_EdgeBufferRW[ep.prev].vert].pos0;
+            _VertBufferRW[_EdgeBufferRW[ei.pair].vert].w = 0;
+            _VertBufferRW[_EdgeBufferRW[ep.next].vert].w = 0;
+            _VertBufferRW[_EdgeBufferRW[ep.prev].vert].w = 0;
         }
     }
     else {

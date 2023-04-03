@@ -832,12 +832,14 @@ namespace Weathering_GPU
             filt.mesh.RecalculateBounds();
 
             // Debug
-            if (false)
+            if (true)
             {
                 var edgeArr = new EdgeData[filt.mesh.triangles.Length];
                 _edgeBuffer.GetData(edgeArr);
                 var constArr = new LengthConstraintData[filt.mesh.triangles.Length];
                 _lengthConstraintBuffer.GetData(constArr);
+                var BconstArr = new BendConstraintData[filt.mesh.triangles.Length];
+                _bendConstraintBuffer.GetData(BconstArr);
                 var lockArr = new uint[vertNum];
                 _lockProcessBuffer.GetData(lockArr);
                 //UnityEngine.Debug.Log(filt.mesh.normals[norArr.Length - 1]);
@@ -907,8 +909,8 @@ namespace Weathering_GPU
                 //UnityEngine.Debug.Log("blank_num: " + countArr[1]);
                 for (int i = 0; i < constArr.Length; i++)
                 {
-                    if (constArr[i].Thr > 0)
-                        UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[constArr[i].P0].Pos), transform.TransformPoint(vertArr[constArr[i].P1].Pos), Color.green);
+                    //if (constArr[i].Thr > 0)
+                    //    UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[constArr[i].P0].Pos), transform.TransformPoint(vertArr[constArr[i].P1].Pos), Color.green);
 
                     if (vertArr[constArr[i].P0].Status == 32 || vertArr[constArr[i].P1].Status == 32) {
                         //if (edgeArr[i].Pair < i)
@@ -916,6 +918,13 @@ namespace Weathering_GPU
                         //else
                         //    UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[constArr[i].P0].Pos + vertArr[constArr[i].P0].Nor * 0.001f), transform.TransformPoint(vertArr[constArr[i].P1].Pos + vertArr[constArr[i].P1].Nor * 0.001f), Color.cyan);
                     }
+                    //UnityEngine.Debug.Log("blank[" + i + "]: " + blankArr[i] + "/" + vertArr[blankArr[i]].Status);
+                }
+                for (int i = 0; i < BconstArr.Length; i++)
+                {
+                    if (BconstArr[i].Thr > 0)
+                        UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[BconstArr[i].P0].Pos), transform.TransformPoint(vertArr[BconstArr[i].P1].Pos), Color.cyan);
+
                     //UnityEngine.Debug.Log("blank[" + i + "]: " + blankArr[i] + "/" + vertArr[blankArr[i]].Status);
                 }
                 if (lock_counter > 0)
