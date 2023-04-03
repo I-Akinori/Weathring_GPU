@@ -48,6 +48,7 @@ Shader "Custom/vertex_color"
 
             void surf(Input IN, inout SurfaceOutputStandard o)
             {
+
                 // Albedo comes from a texture tinted by color
                 fixed4 c = tex2D(_MainTex, IN.uv_MainTex) * _Color;
                 fixed g;
@@ -73,11 +74,14 @@ Shader "Custom/vertex_color"
 
                 //dust = 0;
                 o.Albedo = c.rgb * (1 - dust); // ïœçX
-                //o.Albedo = c.rgb * IN.vertColor.rgb;
                 // Metallic and smoothness come from slider variables
                 o.Metallic = m;
                 o.Smoothness = g;
                 o.Alpha = c.a;
+
+                //o.Metallic = _Metallic;
+                //o.Smoothness = _Glossiness;
+                //o.Albedo = IN.vertColor.rgb;
             }
             ENDCG
         }

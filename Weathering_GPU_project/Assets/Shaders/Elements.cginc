@@ -61,10 +61,12 @@ struct Edge {
 };
 
 struct Face {
+    float3 nor;
     uint edge;   // HalfEdge
     uint stat;   // 0: attatched, 1: peeled
 
     float contraction;
+    float tension;
 };
 
 struct Vertex {

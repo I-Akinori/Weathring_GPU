@@ -99,10 +99,12 @@ namespace Weathering_GPU
         };
         struct FaceData
         {
+            public Vector3 Nor;
             public uint Edge;
             public uint Stat;
 
             public float Contraction;
+            public float Tension;
         };
         struct VertexData
         {
@@ -144,6 +146,8 @@ namespace Weathering_GPU
         int SearchVertices;
         int SetTriangles;
         int SetVertices;
+        int SetFaceNormals;
+        int SetVertNormals;
 
         int SetVertColor_Normal;
         int SetVertColor_Separate;
@@ -221,6 +225,8 @@ namespace Weathering_GPU
             PBD_Update_Ass = CS.FindKernel("PBD_Update_Ass");
             SearchVertices = CS.FindKernel("SearchVertices");
             SetTriangles = CS.FindKernel("SetTriangles");
+            SetFaceNormals = CS.FindKernel("SetFaceNormals");
+            SetVertNormals = CS.FindKernel("SetVertNormals");
             SetVertices = CS.FindKernel("SetVertices");
             SetVertForces = CS.FindKernel("SetVertForces");
             SetVertColor_Normal = CS.FindKernel("SetVertColor_Normal");
@@ -306,6 +312,16 @@ namespace Weathering_GPU
             CS.SetBuffer(SetTriangles, "_FaceBufferRW", _faceBuffer);
             CS.SetBuffer(SetTriangles, "_TriangleBufferRW", _triangleBuffer);
 
+            // SetFaceNormals
+            CS.SetBuffer(SetFaceNormals, "_VertBufferRW", _vertBuffer);
+            CS.SetBuffer(SetFaceNormals, "_EdgeBufferRW", _edgeBuffer);
+            CS.SetBuffer(SetFaceNormals, "_FaceBufferRW", _faceBuffer);
+            
+            // SetVertNormals
+            CS.SetBuffer(SetVertNormals, "_VertBufferRW", _vertBuffer);
+            CS.SetBuffer(SetVertNormals, "_EdgeBufferRW", _edgeBuffer);
+            CS.SetBuffer(SetVertNormals, "_FaceBufferRW", _faceBuffer);
+            
             // SetBase
             CS.SetBuffer(SetBase, "_BasePositionBuffer", _basePositionBuffer);
             CS.SetBuffer(SetBase, "_BaseNormalBuffer", _baseNormalBuffer);
@@ -447,7 +463,7 @@ namespace Weathering_GPU
 
             // イテレーション
 
-            for (int i = 0; i < 32; i++)
+            for (int i = 0; i < 50; i++)
             {
                 CS.SetInt("_itr_count", i);
 
@@ -740,7 +756,9 @@ namespace Weathering_GPU
             CS.Dispatch(ProceedChalking, vertGS, 1, 1);
 
             //CS.SetFloat("length_ratio", 1.25f - 0.25f * Mathf.Cos(Time.time * 0.5f));
-            CS.Dispatch(PBD_UpdateConstraint, edgeGS, 1, 1); // 制約更新
+            CS.SetFloat("k1", 0.0f);
+            CS.SetFloat("k2", 100000.0f);
+            //CS.Dispatch(PBD_UpdateConstraint, edgeGS, 1, 1); // 制約更新
 
             PBD_Simulation();
 
@@ -768,6 +786,10 @@ namespace Weathering_GPU
             _vertBuffer.GetData(vertArr);
 
             InteractiveControl();
+            // 法線更新 (reculcurate normalsがバグるので自前で実装)
+            CS.Dispatch(SetFaceNormals, faceGS, 1, 1);
+            CS.Dispatch(SetVertNormals, vertGS, 1, 1);
+
             // 頂点情報
             CS.Dispatch(SetVertices, vertGS, 1, 1); // ComputeShaderを実行
             var vertexArr = new VertexData[vertNum];
@@ -806,7 +828,7 @@ namespace Weathering_GPU
             filt.mesh.SetIndexBufferData(triangleArr, 0, 0, faceNum * 3);
             //filt.mesh.triangles = triangleArr;
 
-            filt.mesh.RecalculateNormals();
+            //filt.mesh.RecalculateNormals();
             filt.mesh.RecalculateBounds();
 
             // Debug
@@ -834,7 +856,7 @@ namespace Weathering_GPU
                     };
                     if (vertArr[i].Lowest == 1) {
                         //if (vertArr[i].Direction.magnitude == 0)
-                        UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[i].Pos), transform.TransformPoint(vertArr[i].Pos + vertArr[i].Nor * 0.05f), Color.red);
+                        //UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[i].Pos), transform.TransformPoint(vertArr[i].Pos + vertArr[i].Nor * 0.05f), Color.red);
                     }
                     if (vertArr[i].Orig != i)
                     {
@@ -848,6 +870,9 @@ namespace Weathering_GPU
                         //if (i >= 10365)
                         //    UnityEngine.Debug.Log("fake origin: " + i);
                     }
+                    //if (Vector3.Dot(vertArr[i].Nor, vertArr[i].Nor0) < 0)
+                    //    UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[i].Pos), transform.TransformPoint(vertArr[i].Pos + vertArr[i].Nor * 0.01f), Color.green);
+
                 }
                 var blankArr = new uint[countArr[1]];
                 _blankIndexBuffer.GetData(blankArr);
@@ -882,6 +907,9 @@ namespace Weathering_GPU
                 //UnityEngine.Debug.Log("blank_num: " + countArr[1]);
                 for (int i = 0; i < constArr.Length; i++)
                 {
+                    if (constArr[i].Thr > 0)
+                        UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[constArr[i].P0].Pos), transform.TransformPoint(vertArr[constArr[i].P1].Pos), Color.green);
+
                     if (vertArr[constArr[i].P0].Status == 32 || vertArr[constArr[i].P1].Status == 32) {
                         //if (edgeArr[i].Pair < i)
                         //    UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[constArr[i].P0].Pos), transform.TransformPoint(vertArr[constArr[i].P1].Pos), Color.magenta);

@@ -19,6 +19,8 @@ uint _control_separation;   // 0: none, 1: weathering, 2: de-weathering
 uint _control_tear;         // 0: none, 1: weathering, 2: de-weathering 
 uint _control_stain;        // 0: none, 1: rust, 2: dust, 3: chalk, 4: wash
 uint _blank_count;
+float k1;
+float k2;
 
 StructuredBuffer<float3> _PositionBuffer;
 StructuredBuffer<float3> _NormalBuffer;
@@ -48,8 +50,10 @@ float FlowRust(uint source, uint target, uint path, float3 projected_grav) {
     float rust_thr2 = 0.45;
     float rust_ratio = 0.1;
     float val = 0;
-    // 以前は伝搬するには最低限の錆量を設定していたが、可逆にするため廃止
     if (VS.onEdge == 0) {
+        // 順伝搬の場合のみ，10未満の点から錆を受け取らない
+        if (_delta_time > 0 && VS.rust < 10) 
+            return 0;
         if (VS.rust < 100 || VS.lowest == 1) {
             float product = dot(normalize(VT.pos - VS.pos), projected_grav)
                 / (1.0 + exp(-_EdgeBufferRW[path].angle)); // 曲率効果: 溝ほど流れやすい
@@ -250,7 +254,7 @@ void ReconnectEdges(uint id) {
                 } while (tmp_e != _EdgeBufferRW[_EdgeBufferRW[home_e].pair].next);
                 // 錆関係の更新
                 _VertBufferRW[ev].lowest = 0;
-                _VertBufferRW[ev].rust = 0;
+                //_VertBufferRW[ev].rust = 0;
             }
             else {
                 // epnvがオリジナルの可能性があるので、evの方を無効化する
@@ -287,7 +291,7 @@ void ReconnectEdges(uint id) {
                 } while (tmp_e != home_e);
                 // 錆関係の更新
                 _VertBufferRW[epnv].lowest = 0;
-                _VertBufferRW[epnv].rust = 0;
+                //_VertBufferRW[epnv].rust = 0;
             }
 
         }
@@ -295,11 +299,15 @@ void ReconnectEdges(uint id) {
             // 亀裂の端点は修復後元に戻す
             _VertBufferRW[ev].stat = 0;
             _VertBufferRW[ev].lowest = 0;
-            _VertBufferRW[ev].rust = 0;
+            //_VertBufferRW[ev].rust = 0;
         }
         // 剥落の復元
         // 現在の使い方では，stat = 0 である面の周りしかreconnectしないので意味はない
-        _FaceBufferRW[_EdgeBufferRW[id].face].stat = 0;
+        if (_FaceBufferRW[_EdgeBufferRW[id].face].stat == 1) {
+            _FaceBufferRW[_EdgeBufferRW[id].face].stat = 0;
+            _LengthConstraintBufferRW[_EdgeBufferRW[id].next].thr = 0.001;
+            _LengthConstraintBufferRW[_EdgeBufferRW[id].prev].thr = 0.001;
+        };
 
         _EdgeBufferRW[id].stat = 0; _EdgeBufferRW[_EdgeBufferRW[id].pair].stat = 0;
         uint epv = _EdgeBufferRW[_EdgeBufferRW[id].pair].vert;
@@ -388,7 +396,7 @@ void ReconnectEdges(uint id) {
                 
                 // 錆関係の更新
                 _VertBufferRW[epv].lowest = 0;
-                _VertBufferRW[epv].rust = 0;
+                //_VertBufferRW[epv].rust = 0;
             }
             else {
                 // envがオリジナルの可能性があるので、epvの方を無効化する
@@ -426,23 +434,27 @@ void ReconnectEdges(uint id) {
 
                 // 錆関係の更新
                 _VertBufferRW[env].lowest = 0;
-                _VertBufferRW[env].rust = 0;
+                //_VertBufferRW[env].rust = 0;
             }
         }
         else {
             // 亀裂の端点は修復後元に戻す
             _VertBufferRW[epv].stat = 0;
             _VertBufferRW[epv].lowest = 0;
-            _VertBufferRW[epv].rust = 0;
+            //_VertBufferRW[epv].rust = 0;
         }
         // 剥落の復元
-        _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].face].stat = 0;
+        if (_FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].face].stat == 1) {
+            _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].face].stat = 0;
+            _LengthConstraintBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].next].thr = 0.001;
+            _LengthConstraintBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].prev].thr = 0.001;
+        };
     }
 }
 void ControlStain(uint id) {
-    _VertBufferRW[id].rust -= _VertBufferRW[id].rust * 0.05;
-    _VertBufferRW[id].dust -= _VertBufferRW[id].dust * 0.05;
-    _VertBufferRW[id].chalk -= _VertBufferRW[id].chalk * 0.05;
+    _VertBufferRW[id].rust -= _VertBufferRW[id].rust * 0.1;
+    _VertBufferRW[id].dust -= _VertBufferRW[id].dust * 0.1;
+    _VertBufferRW[id].chalk -= _VertBufferRW[id].chalk * 0.1;
 }
 
 #pragma kernel InitVert
@@ -533,6 +545,7 @@ void InitFace
     _FaceBufferRW[P_ID].edge = P_ID * 3;
     _FaceBufferRW[P_ID].stat = 0;
     _FaceBufferRW[P_ID].contraction = 100;
+    _FaceBufferRW[P_ID].tension = 100;
 }
 
 #pragma kernel SetPair
@@ -782,7 +795,7 @@ void PropagateRust
     } while (tmp_e != home_e);
     // 逆再生時は無条件で少し減る
     if (_delta_time < 0)
-        _VertBufferRW[P_ID].rust += _delta_time * 0.1;
+        _VertBufferRW[P_ID].rust += _delta_time * 0.2;
 
     if (_VertBufferRW[P_ID].rust > 100) _VertBufferRW[P_ID].rust = 100;
     if (_VertBufferRW[P_ID].rust < 0) _VertBufferRW[P_ID].rust = 0;
@@ -878,8 +891,8 @@ void PBD_UpdateConstraint
     const unsigned int P_ID = DTid.x;
     if (P_ID >= _EdgeNum) return;
 
-    _LengthConstraintBufferRW[P_ID].offset = _LengthConstraintBufferRW[P_ID].offset0 * (1.0 - _FaceBufferRW[_EdgeBufferRW[P_ID].face].contraction * 0.0001);
-    _BendConstraintBufferRW[P_ID].offset = _BendConstraintBufferRW[P_ID].offset0 + _FaceBufferRW[_EdgeBufferRW[P_ID].face].contraction * 0.001;
+    //_LengthConstraintBufferRW[P_ID].offset = _LengthConstraintBufferRW[P_ID].offset0 * (1.0 - _FaceBufferRW[_EdgeBufferRW[P_ID].face].contraction * 0.0001);
+    //_BendConstraintBufferRW[P_ID].offset = _BendConstraintBufferRW[P_ID].offset0 + _FaceBufferRW[_EdgeBufferRW[P_ID].face].contraction * 0.001;
 }
 
 #pragma kernel PBD_StartFrame
@@ -1118,10 +1131,13 @@ void SetVertColor_Normal
     if (_VertBufferRW[P_ID].stat == 32) { 
         return;
     }
-
-    _VertBufferRW[P_ID].col.x = min(_VertBufferRW[P_ID].rust / 100, 1);
-    _VertBufferRW[P_ID].col.y = 1.0 - exp(-_VertBufferRW[P_ID].dust);
-    _VertBufferRW[P_ID].col.z = 1.0 - exp(-_VertBufferRW[P_ID].chalk);
+    float r = min(max(_VertBufferRW[P_ID].rust / 100, 0), 1);
+    float g = min(max(1.0 - exp(-_VertBufferRW[P_ID].dust), 0), 1);
+    float b = min(max(1.0 - exp(-_VertBufferRW[P_ID].chalk), 0), 1);
+    _VertBufferRW[P_ID].col = float4(r, g, b, 1);
+    //_VertBufferRW[P_ID].col.x = min(_VertBufferRW[P_ID].rust / 100, 1);
+    //_VertBufferRW[P_ID].col.y = 1.0 - exp(-_VertBufferRW[P_ID].dust);
+    //_VertBufferRW[P_ID].col.z = 1.0 - exp(-_VertBufferRW[P_ID].chalk);
 }
 #pragma kernel SetVertColor_Separate
 [numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
@@ -1189,9 +1205,9 @@ void SetVertColor_Tear
                 // 時計回り: tmp_eは頂点に向かう方向
                 // 時計回り処理: すべてのtmp_e
                 tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].prev;
-                val += _EdgeBufferRW[tmp_e].bindingForce - _FaceBufferRW[_EdgeBufferRW[tmp_e].face].contraction;
+                val += _EdgeBufferRW[tmp_e].bindingForce - _FaceBufferRW[_EdgeBufferRW[tmp_e].face].tension;
                 val += _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].bindingForce
-                        - _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].face].contraction;
+                        - _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].face].tension;
                 if (_VertBufferRW[_EdgeBufferRW[tmp_e].vert].stat == 2) {
                     float3 ed = _VertBufferRW[P_ID].pos - _VertBufferRW[_EdgeBufferRW[tmp_e].vert].pos;
                     float rad = length(ed);
@@ -1217,9 +1233,9 @@ void SetVertColor_Tear
             break;
         }
         // 反時計回り処理: ペアが存在しているtmp_e 
-        val += _EdgeBufferRW[tmp_e].bindingForce - _FaceBufferRW[_EdgeBufferRW[tmp_e].face].contraction;
+        val += _EdgeBufferRW[tmp_e].bindingForce - _FaceBufferRW[_EdgeBufferRW[tmp_e].face].tension;
         val += _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].bindingForce
-                - _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].face].contraction;
+                - _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].face].tension;
 
         if (_VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].vert].stat == 2) {
             float3 ed = _VertBufferRW[P_ID].pos - _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].vert].pos;
@@ -1269,6 +1285,7 @@ void SetVertColor_Tear
     }
     _VertBufferRW[P_ID].col = float4(r, g, b, 1);
 
+    //return;
     // デバッグ用のカラー設定
     if (_VertBufferRW[P_ID].stat == 0) {
         r = 1;
@@ -1346,6 +1363,62 @@ void SetTriangles
     _TriangleBufferRW[P_ID * 3 + 1] = tmp.vert;
     tmp = _EdgeBufferRW[tmp.next];
     _TriangleBufferRW[P_ID * 3 + 2] = tmp.vert;
+}
+#pragma kernel SetFaceNormals
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void SetFaceNormals
+(
+    uint3 DTid : SV_DispatchThreadID // スレッド全体で固有のID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _FaceNum) return;
+    uint vi = _EdgeBufferRW[_FaceBufferRW[P_ID].edge].vert;
+    uint vn = _EdgeBufferRW[_EdgeBufferRW[_FaceBufferRW[P_ID].edge].next].vert;
+    uint vp = _EdgeBufferRW[_EdgeBufferRW[_FaceBufferRW[P_ID].edge].prev].vert;
+    _FaceBufferRW[P_ID].nor = normalize(cross(_VertBufferRW[vn].pos - _VertBufferRW[vi].pos, _VertBufferRW[vp].pos - _VertBufferRW[vn].pos));
+}
+#pragma kernel SetVertNormals
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void SetVertNormals
+(
+    uint3 DTid : SV_DispatchThreadID // スレッド全体で固有のID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _VertNum) return;
+    if (_VertBufferRW[P_ID].stat == 32) return;
+
+    uint home_e = _VertBufferRW[P_ID].edge;
+    uint tmp_e = home_e;
+    uint count = 0;
+    float3 sum = 0;
+
+    do {
+        // 反時計回り: tmp_eは頂点から出る方向
+        // 反時計回り処理: すべてのtmp_e
+
+        if (_EdgeBufferRW[tmp_e].stat != 0) {
+            // 反時計回処理: ペア存在しないtmp_e
+            // モデルの縁に来た
+            tmp_e = _EdgeBufferRW[home_e].prev;
+            sum += _FaceBufferRW[_EdgeBufferRW[tmp_e].face].nor; // home_e.face.nor
+            while (_EdgeBufferRW[tmp_e].stat == 0) {
+                // 時計回り: tmp_eは頂点に向かう方向
+                // 時計回り処理: すべてのtmp_e
+                tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].prev;
+                sum += _FaceBufferRW[_EdgeBufferRW[tmp_e].face].nor;
+            }
+            // 時計回り処理: ペアが存在しないtmp_e
+            break;
+        }
+        // 反時計回り処理: ペアが存在しているtmp_e 
+
+        tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].next;
+        sum += _FaceBufferRW[_EdgeBufferRW[tmp_e].face].nor;
+    } while (tmp_e != home_e);
+
+    _VertBufferRW[P_ID].nor = normalize(sum);
 }
 #pragma kernel SetVertForces
 [numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
@@ -1560,6 +1633,25 @@ void UpdateBindingForce
     }
     _FaceBufferRW[P_ID].contraction += 0.5 * _delta_time;
     if (_FaceBufferRW[P_ID].contraction < 0) _FaceBufferRW[P_ID].contraction = 0;
+
+    _LengthConstraintBufferRW[ei].offset = _LengthConstraintBufferRW[ei].offset0 * (1.0 - _FaceBufferRW[_EdgeBufferRW[P_ID].face].contraction * 0.0001); //- _FaceBufferRW[P_ID].contraction / k2; //
+    _LengthConstraintBufferRW[en].offset = _LengthConstraintBufferRW[en].offset0 * (1.0 - _FaceBufferRW[_EdgeBufferRW[P_ID].face].contraction * 0.0001); //- _FaceBufferRW[P_ID].contraction / k2; //
+    _LengthConstraintBufferRW[ep].offset = _LengthConstraintBufferRW[ep].offset0 * (1.0 - _FaceBufferRW[_EdgeBufferRW[P_ID].face].contraction * 0.0001); //- _FaceBufferRW[P_ID].contraction / k2;
+
+    _BendConstraintBufferRW[ei].offset = _BendConstraintBufferRW[ei].offset0 + (_delta_time < 0 ? 0: 0.4);//min(_FaceBufferRW[P_ID].contraction / k2 * 100, 0.4);
+    _BendConstraintBufferRW[en].offset = _BendConstraintBufferRW[en].offset0 + (_delta_time < 0 ? 0 : 0.4);//min(_FaceBufferRW[P_ID].contraction / k2 * 100, 0.4);
+    _BendConstraintBufferRW[ep].offset = _BendConstraintBufferRW[ep].offset0 + (_delta_time < 0 ? 0 : 0.4);//min(_FaceBufferRW[P_ID].contraction / k2 * 100, 0.4);
+
+    _FaceBufferRW[P_ID].tension = _FaceBufferRW[P_ID].contraction;
+
+    float3 vi = _VertBufferRW[_EdgeBufferRW[ei].vert].pos;
+    float3 vp = _VertBufferRW[_EdgeBufferRW[ep].vert].pos;
+    float3 vn = _VertBufferRW[_EdgeBufferRW[en].vert].pos;
+    //_FaceBufferRW[P_ID].tension = _FaceBufferRW[P_ID].contraction 
+    //                            + k1 * (length(vi - vn) - _LengthConstraintBufferRW[ei].offset
+    //                                    + length(vn - vp) - _LengthConstraintBufferRW[en].offset
+    //                                    + length(vp - vi) - _LengthConstraintBufferRW[en].offset
+    //                                );
 }
 
 #pragma kernel SeparateVertex
@@ -1691,17 +1783,17 @@ void TearEdge
     Face fi = _FaceBufferRW[ei.face];
     Face fp = _FaceBufferRW[ep.face];
 
-    float fic = fi.contraction;
-    float fpc = fp.contraction;
+    float fit = fi.tension;
+    float fpt = fp.tension;
     float eib = ei.bindingForce;
     float epb = ep.bindingForce;
     bool crack = false;
 
     float direct_thr = 0.75;
     float bind_ratio = 0.2;
-    float rp = 1.0;         // 張力緩和の係数
+    float rp = 2.0;         // 張力緩和の係数
 
-    float tear_force = fic / (1 + exp(-2 * ei.angle)) + fpc / (1 + exp(-2 * ep.angle));
+    float tear_force = fit / (1 + exp(-2 * ei.angle)) + fpt / (1 + exp(-2 * ep.angle));
     float bind_force = (eib + epb) / 2;
 
     uint v;
@@ -1867,17 +1959,17 @@ void TearEdge
         _LengthConstraintBufferRW[ei.pair].thr = 0.001;
 
         // 張力緩和
-        _FaceBufferRW[ei.face].contraction *= rp;
-        if (_EdgeBufferRW[ei.next].pair != -1)  _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[ei.next].pair].face].contraction *= rp;
-        if (_EdgeBufferRW[ei.prev].pair != -1)  _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[ei.prev].pair].face].contraction *= rp;
-        if (ei.pair != -1)  _FaceBufferRW[_EdgeBufferRW[ei.pair].face].contraction *= rp;
-        _FaceBufferRW[ei.face].contraction *= rp;
+        //_FaceBufferRW[ei.face].contraction *= rp;
+        //if (_EdgeBufferRW[ei.next].pair != -1)  _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[ei.next].pair].face].contraction *= rp;
+        //if (_EdgeBufferRW[ei.prev].pair != -1)  _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[ei.prev].pair].face].contraction *= rp;
+        //if (ei.pair != -1)  _FaceBufferRW[_EdgeBufferRW[ei.pair].face].contraction *= rp;
+        //_FaceBufferRW[ei.face].contraction *= rp;
 
-        _FaceBufferRW[ep.face].contraction *= rp;
-        if (_EdgeBufferRW[ep.next].pair != -1)  _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[ep.next].pair].face].contraction *= rp;
-        if (_EdgeBufferRW[ep.prev].pair != -1)  _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[ep.prev].pair].face].contraction *= rp;
-        if (ep.pair != -1)  _FaceBufferRW[_EdgeBufferRW[ep.pair].face].contraction *= rp;
-        _FaceBufferRW[ei.face].contraction *= rp;
+        //_FaceBufferRW[ep.face].contraction *= rp;
+        //if (_EdgeBufferRW[ep.next].pair != -1)  _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[ep.next].pair].face].contraction *= rp;
+        //if (_EdgeBufferRW[ep.prev].pair != -1)  _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[ep.prev].pair].face].contraction *= rp;
+        //if (ep.pair != -1)  _FaceBufferRW[_EdgeBufferRW[ep.pair].face].contraction *= rp;
+        //_FaceBufferRW[ei.face].contraction *= rp;
 
         if (_VertBufferRW[ei.vert].stat > 2 && _VertBufferRW[ei.vert].onEdge == 0) // ei.vertから見てこれが二本目以上の断裂，頂点を分割する
         {
