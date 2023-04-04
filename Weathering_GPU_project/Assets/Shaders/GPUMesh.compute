@@ -19,6 +19,9 @@ uint _control_separation;   // 0: none, 1: weathering, 2: de-weathering
 uint _control_tear;         // 0: none, 1: weathering, 2: de-weathering 
 uint _control_stain;        // 0: none, 1: rust, 2: dust, 3: chalk, 4: wash
 uint _blank_count;
+float _intensity;
+float _crack_history;
+float _curl;
 float k1;
 float k2;
 
@@ -43,6 +46,26 @@ RWStructuredBuffer<uint> _VertCounter; // カーネル実行中の変更を許�
 RWStructuredBuffer<uint> _BlankIndex;
 
 // helper function for atomic add
+float3 RotateVector(float3 start, float3 goal, float3 target) {
+    float3 axis = cross(start, goal);
+
+    // ベクトルaとベクトルbの内積を求める
+    float angle = acos(dot(start, goal));
+
+    // 回転行列を作成する
+    float c = cos(angle);
+    float s = sin(angle);
+    float t = 1 - c;
+
+    float3x3 rotationMatrix = float3x3(
+        t * axis.x * axis.x + c, t * axis.x * axis.y + s * axis.z, t * axis.x * axis.z - s * axis.y,
+        t * axis.x * axis.y - s * axis.z, t * axis.y * axis.y + c, t * axis.y * axis.z + s * axis.x,
+        t * axis.x * axis.z + s * axis.y, t * axis.y * axis.z - s * axis.x, t * axis.z * axis.z + c
+        );
+
+    // ベクトルvを回転する
+    return mul(rotationMatrix, target);
+}
 float FlowRust(uint source, uint target, uint path, float3 projected_grav) {
     Vert VS = _VertBufferRW[source];
     Vert VT = _VertBufferRW[target];
@@ -151,7 +174,8 @@ void ReconnectEdges(uint id) {
     InterlockedCompareExchange(_LockProcess[_VertBufferRW[_EdgeBufferRW[id].vert].orig], 0, 1, val1);
     uint val2 = 3;
     InterlockedCompareExchange(_LockProcess[_VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].vert].orig], 0, 1, val2);
-
+    float3 d1 = (0, 0, 0);
+    float3 d2 = (0, 0, 0);
     if (val1 == 0 && val2 == 0) {
         _EdgeBufferRW[id].stat = 0; _EdgeBufferRW[_EdgeBufferRW[id].pair].stat = 0;
         // 断裂前稜線の長さ制約は片方だけ
@@ -246,7 +270,7 @@ void ReconnectEdges(uint id) {
                         // 亀裂の端点なら方向を記録
                         if (_VertBufferRW[ev].stat == 2)
                         {
-                            _VertBufferRW[ev].direction = normalize(_VertBufferRW[ev].pos - _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert].pos);
+                            d1 = normalize(_VertBufferRW[ev].pos - _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert].pos);
                         }
                         break; 
                     }
@@ -283,7 +307,7 @@ void ReconnectEdges(uint id) {
                         // 亀裂の端点なら方向を記録
                         if (_VertBufferRW[epnv].stat == 2)
                         {
-                            _VertBufferRW[epnv].direction = normalize(_VertBufferRW[epnv].pos - _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].vert].pos);
+                            d1 = normalize(_VertBufferRW[epnv].pos - _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].vert].pos);
                         }
                         break; 
                     }
@@ -316,7 +340,7 @@ void ReconnectEdges(uint id) {
             _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].next].vert].w = 1;
             _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].prev].vert].w = 1;
         };
-
+        uint before_stat = _EdgeBufferRW[id].stat;
         _EdgeBufferRW[id].stat = 0; _EdgeBufferRW[_EdgeBufferRW[id].pair].stat = 0;
         uint epv = _EdgeBufferRW[_EdgeBufferRW[id].pair].vert;
         uint env = _EdgeBufferRW[_EdgeBufferRW[id].next].vert;
@@ -394,7 +418,7 @@ void ReconnectEdges(uint id) {
                         // 亀裂の端点なら方向を記録
                         if (_VertBufferRW[epv].stat == 2) 
                         {
-                            _VertBufferRW[epv].direction = normalize(_VertBufferRW[epv].pos - _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert].pos);
+                            d2 = normalize(_VertBufferRW[epv].pos - _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert].pos);
                         }
                         break; 
                     }
@@ -429,10 +453,10 @@ void ReconnectEdges(uint id) {
                     SwapVertB(_EdgeBufferRW[tmp_e].next, epv, env);
                     _EdgeBufferRW[tmp_e].vert = env;
                     if (_EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].stat > 0) { 
-                        // 亀裂の端点なら方向を記録
+                        // 亀裂の端点なら方向を更新
                         if (_VertBufferRW[env].stat == 2)
                         {
-                            _VertBufferRW[env].direction = normalize(_VertBufferRW[env].pos - _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].vert].pos);
+                            d2 = normalize(_VertBufferRW[env].pos - _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].vert].pos);
                         }
                         break; 
                     }
@@ -464,6 +488,47 @@ void ReconnectEdges(uint id) {
             _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].next].vert].w = 1;
             _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].prev].vert].w = 1;
         };
+
+        if (before_stat == 3) {
+            // 履歴を保持したままにする
+        }
+        // 方向更新
+        else if (_VertBufferRW[_EdgeBufferRW[id].vert].stat == 2 && _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].vert].stat == 2) {
+            // 対話的操作で強制的に連結した稜線であり，両方とも端点となったとき
+            // 履歴は捨て，今回取得した方向をそのまま利用する
+            _VertBufferRW[_EdgeBufferRW[id].vert].direction = d1;
+            _VertBufferRW[_EdgeBufferRW[id].vert].direction = d2;
+        }
+        else if (_VertBufferRW[_EdgeBufferRW[id].vert].stat == 2) {
+            // それ以外でevが端点になる場合
+            if (_VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].vert].stat < 2 && _crack_history > 0) {
+                float3 rotated_direction = RotateVector(_VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].vert].nor, 
+                    _VertBufferRW[_EdgeBufferRW[id].vert].nor,
+                    _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].vert].direction);
+                // epvの方に亀裂が無くなる場合，evが引き継ぐ
+                _VertBufferRW[_EdgeBufferRW[id].vert].direction =
+                    normalize(rotated_direction - d1 * (1 - _crack_history));
+            }
+            else {
+                // epvの方に別の亀裂ルートがあるか，履歴を利用しない場合．今回取得した方向をそのまま利用する
+                _VertBufferRW[_EdgeBufferRW[id].vert].direction = d1;
+            }
+        }
+        else if (_VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].vert].stat == 2) {
+            // それ以外でepvが端点になる場合
+            if (_VertBufferRW[_EdgeBufferRW[id].vert].stat < 2 && _crack_history > 0) {
+                float3 rotated_direction = RotateVector(_VertBufferRW[_EdgeBufferRW[id].vert].nor,
+                    _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].vert].nor,
+                    _VertBufferRW[_EdgeBufferRW[id].vert].direction);
+                // evの方に亀裂が無くなる場合，epvが引き継ぐ
+                _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].vert].direction =
+                    normalize(rotated_direction - d2 * (1 - _crack_history));
+            }
+            else {
+                // epvの方に別の亀裂ルートがあるか，履歴を利用しない場合．今回取得した方向をそのまま利用する
+                _VertBufferRW[_EdgeBufferRW[id].vert].direction = d2;
+            }
+        }
     }
 }
 void ControlStain(uint id) {
@@ -1653,9 +1718,9 @@ void UpdateBindingForce
     _LengthConstraintBufferRW[en].offset = _LengthConstraintBufferRW[en].offset0 * (1.0 - _FaceBufferRW[_EdgeBufferRW[P_ID].face].contraction * 0.0001); //- _FaceBufferRW[P_ID].contraction / k2; //
     _LengthConstraintBufferRW[ep].offset = _LengthConstraintBufferRW[ep].offset0 * (1.0 - _FaceBufferRW[_EdgeBufferRW[P_ID].face].contraction * 0.0001); //- _FaceBufferRW[P_ID].contraction / k2;
 
-    _BendConstraintBufferRW[ei].offset = _BendConstraintBufferRW[ei].offset0 + (_delta_time < 0 ? 0: 0.4);//min(_FaceBufferRW[P_ID].contraction / k2 * 100, 0.4);
-    _BendConstraintBufferRW[en].offset = _BendConstraintBufferRW[en].offset0 + (_delta_time < 0 ? 0 : 0.4);//min(_FaceBufferRW[P_ID].contraction / k2 * 100, 0.4);
-    _BendConstraintBufferRW[ep].offset = _BendConstraintBufferRW[ep].offset0 + (_delta_time < 0 ? 0 : 0.4);//min(_FaceBufferRW[P_ID].contraction / k2 * 100, 0.4);
+    _BendConstraintBufferRW[ei].offset = _BendConstraintBufferRW[ei].offset0 + (_delta_time < 0 ? 0: _curl);//min(_FaceBufferRW[P_ID].contraction / k2 * 100, 0.4);
+    _BendConstraintBufferRW[en].offset = _BendConstraintBufferRW[en].offset0 + (_delta_time < 0 ? 0 : _curl);//min(_FaceBufferRW[P_ID].contraction / k2 * 100, 0.4);
+    _BendConstraintBufferRW[ep].offset = _BendConstraintBufferRW[ep].offset0 + (_delta_time < 0 ? 0 : _curl);//min(_FaceBufferRW[P_ID].contraction / k2 * 100, 0.4);
 
     _FaceBufferRW[P_ID].tension = _FaceBufferRW[P_ID].contraction;
 
@@ -1898,7 +1963,7 @@ void TearEdge
             sy /= sqrt(rad);
             sxy /= sqrt(rad);
             float s = sy * cos * cos + sx * sin * sin - 2 * sxy * cos * sin;
-            if (tear_force * s * 1 > bind_force)
+            if (tear_force * s * _intensity > bind_force)
                 crack = true;
         }
         else if (_VertBufferRW[ep.vert].stat == 2 && true) {
@@ -1919,7 +1984,7 @@ void TearEdge
             sy /= sqrt(rad);
             sxy /= sqrt(rad);
             float s = sy * cos * cos + sx * sin * sin - 2 * sxy * cos * sin;
-            if (tear_force * s * 1 > bind_force)
+            if (tear_force * s * _intensity > bind_force)
                 crack = true;
         }
         // そもそも亀裂が発生する状態なのかのチェック
@@ -1989,7 +2054,12 @@ void TearEdge
         // 新たに亀裂の端点になった場合
         if (_VertBufferRW[ei.vert].stat == 2) {
             float3 d = normalize(_VertBufferRW[ei.vert].pos - _VertBufferRW[ep.vert].pos);
-            d += _VertBufferRW[ep.vert].direction; // 前の方向を参照
+            // 伸展の場合 (反対側のstatが3の場合) のみ過去の状態を参照する
+            if (_VertBufferRW[ep.vert].stat == 3) {
+                float3 rotated_direction =
+                    RotateVector(_VertBufferRW[ep.vert].nor, _VertBufferRW[ei.vert].nor, _VertBufferRW[ep.vert].direction);
+                d = d * (1.0 - _crack_history) + rotated_direction * _crack_history; // 前の方向を参照
+            }
             _VertBufferRW[ei.vert].direction = normalize(d);
             if (dot(_VertBufferRW[ei.vert].direction, _gravity.xyz) > 0)
             {
@@ -1999,7 +2069,12 @@ void TearEdge
         }
         if (_VertBufferRW[ep.vert].stat == 2) {
             float3 d = normalize(_VertBufferRW[ep.vert].pos - _VertBufferRW[ei.vert].pos);
-            d += _VertBufferRW[ei.vert].direction; // 前の方向を参照
+            // 伸展の場合 (反対側のstatが3の場合) のみ過去の状態を参照する
+            if (_VertBufferRW[ei.vert].stat == 3) {
+                float3 rotated_direction =
+                    RotateVector(_VertBufferRW[ei.vert].nor, _VertBufferRW[ep.vert].nor, _VertBufferRW[ei.vert].direction);
+                d = d * (1.0 - _crack_history) + rotated_direction * _crack_history; // 前の方向を参照
+            }
             _VertBufferRW[ep.vert].direction = normalize(d);
             if (dot(_VertBufferRW[ep.vert].direction, _gravity.xyz) > 0)
             {
@@ -2427,7 +2502,7 @@ void TearEdge
             sy /= sqrt(rad);
             sxy /= sqrt(rad);
             float s = sy * cos * cos + sx * sin * sin - 2 * sxy * cos * sin;
-            if (tear_force / rp * s * 1 < bind_force)
+            if (tear_force / rp * s * _intensity < bind_force)
                 crack = false;
         }
         if (crack && (_VertBufferRW[ep.vert].stat == 2 || ei.stat == 3)) {
@@ -2448,7 +2523,7 @@ void TearEdge
             sy /= sqrt(rad);
             sxy /= sqrt(rad);
             float s = sy * cos * cos + sx * sin * sin - 2 * sxy * cos * sin;
-            if (tear_force / rp * s * 1 < bind_force)
+            if (tear_force / rp * s * _intensity < bind_force)
                 crack = false;
         }
         if (crack == false)

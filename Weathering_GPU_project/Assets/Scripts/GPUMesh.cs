@@ -15,6 +15,9 @@ namespace Weathering_GPU
         [SerializeField] private Material mainMat;
         [SerializeField] private Material subMat;
         [SerializeField] private Material baseMat;
+        [SerializeField, Range(0.0f, 2.0f)] private float intensity = 1;
+        [SerializeField, Range(0.0f, 1.0f)] private float history = 0.5f;
+        [SerializeField, Range(0.0f, 0.5f)] private float curl = 0.4f;
         private Stopwatch sw = new Stopwatch();
         private int vertNum;
         private int edgeNum;
@@ -758,6 +761,9 @@ namespace Weathering_GPU
             //CS.SetFloat("length_ratio", 1.25f - 0.25f * Mathf.Cos(Time.time * 0.5f));
             CS.SetFloat("k1", 0.0f);
             CS.SetFloat("k2", 100000.0f);
+            CS.SetFloat("_intensity", intensity);
+            CS.SetFloat("_crack_history", history);
+            CS.SetFloat("_curl", curl);
             //CS.Dispatch(PBD_UpdateConstraint, edgeGS, 1, 1); // êßñÒçXêV
 
             PBD_Simulation();
@@ -832,7 +838,7 @@ namespace Weathering_GPU
             filt.mesh.RecalculateBounds();
 
             // Debug
-            if (true)
+            if (false)
             {
                 var edgeArr = new EdgeData[filt.mesh.triangles.Length];
                 _edgeBuffer.GetData(edgeArr);
@@ -856,9 +862,9 @@ namespace Weathering_GPU
                         //UnityEngine.Debug.Log("32: " + i);
                         //UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + vertArr[i].Nor * 0.1f, Color.magenta);
                     };
-                    if (vertArr[i].Lowest == 1) {
+                    if (vertArr[i].Status == 2) {
                         //if (vertArr[i].Direction.magnitude == 0)
-                        //UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[i].Pos), transform.TransformPoint(vertArr[i].Pos + vertArr[i].Nor * 0.05f), Color.red);
+                        UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[i].Pos), transform.TransformPoint(vertArr[i].Pos + vertArr[i].Direction * 0.05f), Color.red);
                     }
                     if (vertArr[i].Orig != i)
                     {
@@ -922,8 +928,8 @@ namespace Weathering_GPU
                 }
                 for (int i = 0; i < BconstArr.Length; i++)
                 {
-                    if (BconstArr[i].Thr > 0)
-                        UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[BconstArr[i].P0].Pos), transform.TransformPoint(vertArr[BconstArr[i].P1].Pos), Color.cyan);
+                    //if (BconstArr[i].Thr > 0)
+                    //    UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[BconstArr[i].P0].Pos), transform.TransformPoint(vertArr[BconstArr[i].P1].Pos), Color.cyan);
 
                     //UnityEngine.Debug.Log("blank[" + i + "]: " + blankArr[i] + "/" + vertArr[blankArr[i]].Status);
                 }
