@@ -875,7 +875,7 @@ void PropagateRust
     } while (tmp_e != home_e);
     // 逆再生時は無条件で少し減る
     if (_delta_time < 0)
-        _VertBufferRW[P_ID].rust += _delta_time * 0.2;
+        _VertBufferRW[P_ID].rust += _delta_time * 0.4;
 
     if (_VertBufferRW[P_ID].rust > 100) _VertBufferRW[P_ID].rust = 100;
     if (_VertBufferRW[P_ID].rust < 0) _VertBufferRW[P_ID].rust = 0;

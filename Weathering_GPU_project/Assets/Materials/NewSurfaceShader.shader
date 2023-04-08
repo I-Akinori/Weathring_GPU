@@ -9,46 +9,203 @@ Shader "Custom/NewSurfaceShader"
     }
     SubShader
     {
-        Tags { "RenderType"="Opaque" }
-        LOD 200
+        Pass
+{
 
-        CGPROGRAM
-        // Physically based Standard lighting model, and enable shadows on all light types
-        #pragma surface surf Standard fullforwardshadows
+Name "FORWARD"
+Tags { "LightMode" = "ForwardBase" }
 
-        // Use shader model 3.0 target, to get nicer looking lighting
-        #pragma target 3.0
+CGPROGRAM
+#pragma vertex vert_surf
+#pragma fragment frag_surf
+#pragma target 3.0
+#pragma multi_compile_instancing
+#pragma multi_compile_fog
+#pragma multi_compile_fwdbase
+#include "HLSLSupport.cginc"
+#include "UnityShaderVariables.cginc"
+#include "UnityShaderUtilities.cginc"
 
-        sampler2D _MainTex;
+#define UNITY_PASS_FORWARDBASE
+#include "UnityCG.cginc"
+#include "Lighting.cginc"
+#include "UnityPBSLighting.cginc"
+#include "AutoLight.cginc"
 
-        struct Input
-        {
-            float2 uv_MainTex;
-            float4 vertColor; // ’Ç‰Á
-        };
+sampler2D _MainTex;
+float4 _MainTex_ST;
+half _Glossiness;
+half _Metallic;
+fixed4 _Color;
 
-        half _Glossiness;
-        half _Metallic;
-        fixed4 _Color;
+struct Input
+{
+    float2 uv_MainTex;
+};
 
-        // Add instancing support for this shader. You need to check 'Enable Instancing' on materials that use the shader.
-        // See https://docs.unity3d.com/Manual/GPUInstancing.html for more information about instancing.
-        // #pragma instancing_options assumeuniformscaling
-        UNITY_INSTANCING_BUFFER_START(Props)
-            // put more per-instance properties here
-        UNITY_INSTANCING_BUFFER_END(Props)
+void surf(Input IN, inout SurfaceOutputStandard o)
+{
+    fixed4 c = tex2D(_MainTex, IN.uv_MainTex) * _Color;
+    o.Albedo = c.rgb;
+    o.Metallic = _Metallic;
+    o.Smoothness = _Glossiness;
+    o.Alpha = c.a;
+}
 
-        void surf (Input IN, inout SurfaceOutputStandard o)
-        {
-            // Albedo comes from a texture tinted by color
-            fixed4 c = tex2D (_MainTex, IN.uv_MainTex) * _Color;
-            o.Albedo = IN.vertColor.rgb;
-            // Metallic and smoothness come from slider variables
-            o.Metallic = _Metallic;
-            o.Smoothness = _Glossiness;
-            o.Alpha = c.a;
-        }
-        ENDCG
+struct v2f_surf
+{
+    UNITY_POSITION(pos);
+    float3 nor		   : NORMAL;
+    float2 pack0 : TEXCOORD0;
+    float3 worldNormal : TEXCOORD1;
+    float3 worldPos : TEXCOORD2;
+    float4 lmap : TEXCOORD3;
+    UNITY_SHADOW_COORDS(4)
+    UNITY_FOG_COORDS(5)
+#ifndef LIGHTMAP_ON
+    #if UNITY_SHOULD_SAMPLE_SH
+    half3 sh : TEXCOORD6;
+    #endif
+#endif
+    UNITY_VERTEX_INPUT_INSTANCE_ID
+    UNITY_VERTEX_OUTPUT_STEREO
+};
+
+v2f_surf vert_surf(appdata_full v)
+{
+    v2f_surf o;
+    UNITY_INITIALIZE_OUTPUT(v2f_surf, o);
+
+    UNITY_SETUP_INSTANCE_ID(v);
+    UNITY_TRANSFER_INSTANCE_ID(v, o);
+    UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
+
+    o.pos = UnityObjectToClipPos(v.vertex);
+    o.pack0.xy = TRANSFORM_TEX(v.texcoord, _MainTex);
+    float3 worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
+    float3 worldNormal = UnityObjectToWorldNormal(v.normal);
+    float3 Normal = UnityObjectToWorldNormal(v.normal);
+    o.worldPos = worldPos;
+    o.worldNormal = worldNormal;
+    o.nor = Normal;
+
+#ifdef DYNAMICLIGHTMAP_ON
+    o.lmap.zw = v.texcoord2.xy * unity_DynamicLightmapST.xy + unity_DynamicLightmapST.zw;
+#endif
+
+#ifdef LIGHTMAP_ON
+    o.lmap.xy = v.texcoord1.xy * unity_LightmapST.xy + unity_LightmapST.zw;
+#endif
+
+#ifndef LIGHTMAP_ON
+    #if UNITY_SHOULD_SAMPLE_SH && !UNITY_SAMPLE_FULL_SH_PER_PIXEL
+        o.sh = 0;
+        #ifdef VERTEXLIGHT_ON
+            o.sh += Shade4PointLights(
+                unity_4LightPosX0,
+                unity_4LightPosY0,
+                unity_4LightPosZ0,
+                unity_LightColor[0].rgb,
+                unity_LightColor[1].rgb,
+                unity_LightColor[2].rgb,
+                unity_LightColor[3].rgb,
+                unity_4LightAtten0,
+                worldPos,
+                Normal);
+        #endif
+        o.sh = ShadeSHPerVertex(Normal, o.sh);
+    #endif
+#endif
+
+    UNITY_TRANSFER_SHADOW(o,v.texcoord1.xy);
+    UNITY_TRANSFER_FOG(o,o.pos);
+    return o;
+}
+
+fixed4 frag_surf(v2f_surf IN) : SV_Target
+{
+    UNITY_SETUP_INSTANCE_ID(IN);
+    float3 worldPos = IN.worldPos;
+    float3 worldViewDir = normalize(UnityWorldSpaceViewDir(worldPos));
+
+#ifndef USING_DIRECTIONAL_LIGHT
+    fixed3 lightDir = normalize(UnityWorldSpaceLightDir(worldPos));
+#else
+    fixed3 lightDir = _WorldSpaceLightPos0.xyz;
+#endif
+
+    Input surfIN;
+    UNITY_INITIALIZE_OUTPUT(Input, surfIN);
+    surfIN.uv_MainTex.x = 1.0;
+    surfIN.uv_MainTex = IN.pack0.xy;
+
+    SurfaceOutputStandard o;
+    UNITY_INITIALIZE_OUTPUT(SurfaceOutputStandard, o);
+    o.Albedo = 0.0;
+    o.Emission = 0.0;
+    o.Alpha = 0.0;
+    o.Occlusion = 1.0;
+    o.Normal = IN.nor;
+
+    surf(surfIN, o);
+
+    UNITY_LIGHT_ATTENUATION(atten, IN, worldPos)
+
+    fixed4 c = 0;
+
+    UnityGI gi;
+    UNITY_INITIALIZE_OUTPUT(UnityGI, gi);
+    gi.indirect.diffuse = 0;
+    gi.indirect.specular = 0;
+    gi.light.color = _LightColor0.rgb;
+    gi.light.dir = lightDir;
+
+    UnityGIInput giInput;
+    UNITY_INITIALIZE_OUTPUT(UnityGIInput, giInput);
+    giInput.light = gi.light;
+    giInput.worldPos = worldPos;
+    giInput.worldViewDir = worldViewDir;
+    giInput.atten = atten;
+
+#if defined(LIGHTMAP_ON) || defined(DYNAMICLIGHTMAP_ON)
+    giInput.lightmapUV = IN.lmap;
+#else
+    giInput.lightmapUV = 0.0;
+#endif
+
+#if UNITY_SHOULD_SAMPLE_SH && !UNITY_SAMPLE_FULL_SH_PER_PIXEL
+    giInput.ambient = IN.sh;
+#else
+    giInput.ambient.rgb = 0.0;
+#endif
+
+    giInput.probeHDR[0] = unity_SpecCube0_HDR;
+    giInput.probeHDR[1] = unity_SpecCube1_HDR;
+
+#if defined(UNITY_SPECCUBE_BLENDING) || defined(UNITY_SPECCUBE_BOX_PROJECTION)
+    giInput.boxMin[0] = unity_SpecCube0_BoxMin;
+#endif
+
+#ifdef UNITY_SPECCUBE_BOX_PROJECTION
+    giInput.boxMax[0] = unity_SpecCube0_BoxMax;
+    giInput.probePosition[0] = unity_SpecCube0_ProbePosition;
+    giInput.boxMax[1] = unity_SpecCube1_BoxMax;
+    giInput.boxMin[1] = unity_SpecCube1_BoxMin;
+    giInput.probePosition[1] = unity_SpecCube1_ProbePosition;
+#endif
+
+    LightingStandard_GI(o, giInput, gi);
+    c += LightingStandard(o, worldViewDir, gi);
+
+    UNITY_APPLY_FOG(IN.fogCoord, c);
+    UNITY_OPAQUE_ALPHA(c.a);
+
+    return c;
+}
+
+ENDCG
+
+}
     }
     FallBack "Diffuse"
 }

@@ -441,11 +441,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b5944e247ba84864bbe1da2495aac9f8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  mainMat: {fileID: 2100000, guid: 57653e2bdcea56c4fabeed7340a446f8, type: 2}
+  mainMat: {fileID: 2100000, guid: 793f77cb6412338418c2ec8e51b7111a, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
   baseMat: {fileID: 2100000, guid: 4a44196c05d512f41a64d22626a5da65, type: 2}
   intensity: 1
-  history: 1
+  history: 0.5
   curl: 0.4
   CS: {fileID: 7200000, guid: c199bc15ed28da441a805200ac94d548, type: 3}
 --- !u!1 &182537019
@@ -1618,7 +1618,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 705507993}
   m_LocalRotation: {x: 0.40821788, y: -0.23456968, z: 0.10938163, w: 0.8754261}
-  m_LocalPosition: {x: 0, y: 3, z: 0}
+  m_LocalPosition: {x: -0.42, y: 3, z: -0.24}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -2146,7 +2146,7 @@ Camera:
   m_CullingMask:
     serializedVersion: 2
     m_Bits: 4294967295
-  m_RenderingPath: -1
+  m_RenderingPath: 1
   m_TargetTexture: {fileID: 0}
   m_TargetDisplay: 0
   m_TargetEye: 3
@@ -5788,7 +5788,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 57653e2bdcea56c4fabeed7340a446f8, type: 2}
+  - {fileID: 2100000, guid: 793f77cb6412338418c2ec8e51b7111a, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
