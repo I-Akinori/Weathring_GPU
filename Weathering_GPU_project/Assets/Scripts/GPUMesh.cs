@@ -838,7 +838,7 @@ namespace Weathering_GPU
             filt.mesh.RecalculateBounds();
 
             // Debug
-            if (false)
+            if (true)
             {
                 var edgeArr = new EdgeData[filt.mesh.triangles.Length];
                 _edgeBuffer.GetData(edgeArr);
@@ -851,6 +851,7 @@ namespace Weathering_GPU
                 //UnityEngine.Debug.Log(filt.mesh.normals[norArr.Length - 1]);
 
                 int count = 0;
+                
                 for (int i = 0; i < vertArr.Length; i++)
                 {
                     if (vertArr[i].Status == 32)
@@ -864,13 +865,40 @@ namespace Weathering_GPU
                     };
                     if (vertArr[i].Status == 2) {
                         //if (vertArr[i].Direction.magnitude == 0)
-                        UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[i].Pos), transform.TransformPoint(vertArr[i].Pos + vertArr[i].Direction * 0.05f), Color.red);
+                        //UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[i].Pos), transform.TransformPoint(vertArr[i].Pos + vertArr[i].Direction * 0.05f), Color.red);
                     }
-                    if (vertArr[i].Orig != i)
+                    if (vertArr[i].OnEdge == 1 && false)
                     {
-                        //var d = vertArr[edgeArr[edgeArr[vertArr[i].Edge].Next].Vert].Pos - vertArr[i].Pos;
-                        //UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + (vertArr[i].Nor + d) * 0.1f, Color.cyan);
+                        var d1 = vertArr[edgeArr[edgeArr[vertArr[i].Edge].Next].Vert].Pos - vertArr[i].Pos;
+                        var d2 = vertArr[i].Pos - vertArr[edgeArr[edgeArr[vertArr[i].Edge].Prev].Vert].Pos;
+                        var d3 = vertArr[edgeArr[edgeArr[vertArr[i].Edge].Prev].Vert].Pos - vertArr[edgeArr[edgeArr[vertArr[i].Edge].Next].Vert].Pos;
+                        //UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + (vertArr[i].Nor + d) * 0.1f, Color.white);
+                        var c = (vertArr[i].Pos + vertArr[edgeArr[edgeArr[vertArr[i].Edge].Next].Vert].Pos + vertArr[edgeArr[edgeArr[vertArr[i].Edge].Prev].Vert].Pos) / 3;
+                        if (vertArr[i].OnEdge == 1 && vertArr[i].Orig == i)
+                        {
+                            UnityEngine.Debug.DrawLine(Vector3.Lerp(vertArr[i].Pos, c, 0.0f), Vector3.Lerp(vertArr[i].Pos + 0.8f * d1, c, 0.2f), Color.cyan);
+                            UnityEngine.Debug.DrawLine(Vector3.Lerp(vertArr[edgeArr[edgeArr[vertArr[i].Edge].Prev].Vert].Pos, c, 0.0f), Vector3.Lerp(vertArr[edgeArr[edgeArr[vertArr[i].Edge].Prev].Vert].Pos + 0.8f * d2, c, 0.2f), Color.cyan * 0.5f);
+                            UnityEngine.Debug.DrawLine(Vector3.Lerp(vertArr[edgeArr[edgeArr[vertArr[i].Edge].Next].Vert].Pos, c, 0.0f), Vector3.Lerp(vertArr[edgeArr[edgeArr[vertArr[i].Edge].Next].Vert].Pos + 0.8f * d3, c, 0.2f), Color.cyan * 0.5f);
 
+                        }
+                        else if (vertArr[i].OnEdge == 1 && vertArr[i].Orig != i)
+                        {
+                            UnityEngine.Debug.DrawLine(Vector3.Lerp(vertArr[i].Pos, c, 0.0f), Vector3.Lerp(vertArr[i].Pos + 0.8f * d1, c, 0.3f), Color.green);
+                            UnityEngine.Debug.DrawLine(Vector3.Lerp(vertArr[edgeArr[edgeArr[vertArr[i].Edge].Prev].Vert].Pos, c, 0.0f), Vector3.Lerp(vertArr[edgeArr[edgeArr[vertArr[i].Edge].Prev].Vert].Pos + 0.8f * d2, c, 0.3f), Color.green * 0.5f);
+                            UnityEngine.Debug.DrawLine(Vector3.Lerp(vertArr[edgeArr[edgeArr[vertArr[i].Edge].Next].Vert].Pos, c, 0.0f), Vector3.Lerp(vertArr[edgeArr[edgeArr[vertArr[i].Edge].Next].Vert].Pos + 0.8f * d3, c, 0.3f), Color.green * 0.5f);
+                        }
+                        else if (vertArr[i].OnEdge != 1 && vertArr[i].Orig == i)
+                        {
+                            UnityEngine.Debug.DrawLine(Vector3.Lerp(vertArr[i].Pos, c, 0.0f), Vector3.Lerp(vertArr[i].Pos + 0.8f * d1, c, 0.4f), Color.white);
+                            UnityEngine.Debug.DrawLine(Vector3.Lerp(vertArr[edgeArr[edgeArr[vertArr[i].Edge].Prev].Vert].Pos, c, 0.0f), Vector3.Lerp(vertArr[edgeArr[edgeArr[vertArr[i].Edge].Prev].Vert].Pos + 0.8f * d2, c, 0.4f), Color.white * 0.5f);
+                            UnityEngine.Debug.DrawLine(Vector3.Lerp(vertArr[edgeArr[edgeArr[vertArr[i].Edge].Next].Vert].Pos, c, 0.0f), Vector3.Lerp(vertArr[edgeArr[edgeArr[vertArr[i].Edge].Next].Vert].Pos + 0.8f * d3, c, 0.4f), Color.white * 0.5f);
+                        }
+                        else {
+                            UnityEngine.Debug.DrawLine(Vector3.Lerp(vertArr[i].Pos, c, 0.0f), Vector3.Lerp(vertArr[i].Pos + 0.8f * d1, c, 0.5f), Color.red);
+                            UnityEngine.Debug.DrawLine(Vector3.Lerp(vertArr[edgeArr[edgeArr[vertArr[i].Edge].Prev].Vert].Pos, c, 0.0f), Vector3.Lerp(vertArr[edgeArr[edgeArr[vertArr[i].Edge].Prev].Vert].Pos + 0.8f * d2, c, 0.5f), Color.red * 0.5f);
+                            UnityEngine.Debug.DrawLine(Vector3.Lerp(vertArr[edgeArr[edgeArr[vertArr[i].Edge].Next].Vert].Pos, c, 0.0f), Vector3.Lerp(vertArr[edgeArr[edgeArr[vertArr[i].Edge].Next].Vert].Pos + 0.8f * d3, c, 0.5f), Color.red * 0.5f);
+
+                        }
                     }
                     else
                     {
@@ -889,11 +917,22 @@ namespace Weathering_GPU
                     if (vertArr[edgeArr[i].Vert].Status == 32)
                     {
                         UnityEngine.Debug.Log("Error 32: " + i);
-                        //UnityEngine.Debug.DrawLine(vertArr[edgeArr[i].Vert].Pos, vertArr[edgeArr[edgeArr[i].Next].Vert].Pos, Color.magenta);
+                        UnityEngine.Debug.DrawLine(vertArr[edgeArr[i].Vert].Pos, vertArr[edgeArr[edgeArr[i].Next].Vert].Pos, Color.magenta);
 
                     }
-                    //if (edgeArr[i].Stat == 3)
-                    //    UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[edgeArr[i].Vert].Pos), transform.TransformPoint(vertArr[edgeArr[edgeArr[i].Next].Vert].Pos), Color.magenta);
+                    if (edgeArr[i].Stat != 1 && edgeArr[i].Vert != edgeArr[edgeArr[edgeArr[i].Pair].Next].Vert)
+                    {
+                        //UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[edgeArr[i].Vert].Pos), transform.TransformPoint(vertArr[edgeArr[edgeArr[i].Next].Vert].Pos), Color.cyan);
+                    }
+                    if (edgeArr[i].Stat == 3)
+                    {
+                        UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[edgeArr[i].Vert].Pos), transform.TransformPoint(vertArr[edgeArr[edgeArr[i].Next].Vert].Pos), Color.magenta);
+                        //UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[edgeArr[i].Vert].Pos), transform.TransformPoint(vertArr[edgeArr[edgeArr[i].Next].Vert].Pos), Color.green);
+                    }
+                    else if (edgeArr[i].Stat > 1)
+                    {
+                        //UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[edgeArr[i].Vert].Pos), transform.TransformPoint(vertArr[edgeArr[edgeArr[i].Next].Vert].Pos), Color.magenta);
+                    }
                 }
                 int lock_counter = 0;
                 for (int i = 0; i < lockArr.Length; i++)
@@ -905,7 +944,7 @@ namespace Weathering_GPU
                         lock_counter++;
                         //UnityEngine.Debug.Log("locked: " + i);
                         locked_verts.Add(i);
-                        //UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + vertArr[i].Nor * 0.1f, Color.magenta);
+                        UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + vertArr[i].Nor * 0.1f, Color.magenta);
                     };
                 }
                 for (int i = 0; i < blankArr.Length; i++)
@@ -939,7 +978,7 @@ namespace Weathering_GPU
                 }
                 foreach (var v in locked_verts)
                 {
-                    //UnityEngine.Debug.DrawLine(vertArr[v].Pos, vertArr[v].Pos + vertArr[v].Nor * 0.2f, Color.black);
+                    UnityEngine.Debug.DrawLine(vertArr[v].Pos, vertArr[v].Pos + vertArr[v].Nor * 0.2f, Color.black);
                 }
                 //UnityEngine.Debug.Log("verts: " + vertNum);
 

@@ -195,6 +195,8 @@ void ReconnectEdges(uint id) {
         
         uint ev = _EdgeBufferRW[id].vert;
         uint epnv = _EdgeBufferRW[_EdgeBufferRW[_EdgeBufferRW[id].pair].next].vert;
+        uint epv = _EdgeBufferRW[_EdgeBufferRW[id].pair].vert;
+        uint env = _EdgeBufferRW[_EdgeBufferRW[id].next].vert;
 
         //if (ev == epnv) return;
         // stat == 3 で塗膜片 2枚: stat > 3 のときは繋げても塗膜片が分断されたままになる
@@ -221,19 +223,16 @@ void ReconnectEdges(uint id) {
                 if (_EdgeBufferRW[tmp_e].stat == 1) {
                     vertex_list[count++] = _EdgeBufferRW[home_e].vert;
                     tmp_e = home_e;
-                    while (_EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].stat == 1) {
+                    while (_EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].stat != 1) {
+                        
+                        tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].pair;
                         if (_EdgeBufferRW[tmp_e].vert != vertex_list[count - 1]) {
                             vertex_list[count++] = _EdgeBufferRW[tmp_e].vert;
                         }
-                        tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].pair;
                     }
                     break;
                 }
                 tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].next;
-                if (debug_counter++ > 64) {
-                    _VertBufferRW[ev].stat = 64;
-                    break;
-                };
             } while (tmp_e != _EdgeBufferRW[_EdgeBufferRW[home_e].pair].next);
 
             // statはすべて頂点数(亀裂数) に
@@ -274,10 +273,6 @@ void ReconnectEdges(uint id) {
                         }
                         break; 
                     }
-                    if (debug_counter++ > 64) {
-                        _VertBufferRW[ev].stat = 64;
-                        break;
-                    };
                     tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].next;
 
                 } while (tmp_e != _EdgeBufferRW[_EdgeBufferRW[home_e].pair].next);
@@ -311,10 +306,6 @@ void ReconnectEdges(uint id) {
                         }
                         break; 
                     }
-                    if (debug_counter++ > 64) {
-                        _VertBufferRW[epnv].stat = 64;
-                        break;
-                    };
                     tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].pair;
 
                 } while (tmp_e != home_e);
@@ -326,7 +317,7 @@ void ReconnectEdges(uint id) {
         }
         else {
             // 亀裂の端点は修復後元に戻す
-            _VertBufferRW[ev].stat = 0;
+            _VertBufferRW[ev].stat = 1;
             _VertBufferRW[ev].lowest = 0;
             //_VertBufferRW[ev].rust = 0;
         }
@@ -342,15 +333,14 @@ void ReconnectEdges(uint id) {
         };
         uint before_stat = _EdgeBufferRW[id].stat;
         _EdgeBufferRW[id].stat = 0; _EdgeBufferRW[_EdgeBufferRW[id].pair].stat = 0;
-        uint epv = _EdgeBufferRW[_EdgeBufferRW[id].pair].vert;
-        uint env = _EdgeBufferRW[_EdgeBufferRW[id].next].vert;
+
 
         //if (ev == epnv) return;
         // stat == 3 で塗膜片 2枚: stat > 3 のときは繋げても塗膜片が分断されたままになる
         // そのため向かい側まで頂点のstatを更新しなくてはならない
         // またstat > 2 のときは分かれた頂点が stat - 1 > 1 個あって statの値がバラバラの可能性がある
         // たとえば... 亀裂端点 (2) → 分断直後 (3, 3) → さらに分断 (3, 4, 4) → さらにさらに分断 (3, 5, 5, 4)
-        // なので現状を把握するにはstatの最大値を探索する必要が出てくる
+        // 塗膜片の数を数える必要がある
         if (_VertBufferRW[epv].stat > 2)
         {
             uint home_e = _EdgeBufferRW[id].pair;
@@ -369,19 +359,16 @@ void ReconnectEdges(uint id) {
                 if (_EdgeBufferRW[tmp_e].stat == 1) {
                     vertex_list[count++] = _EdgeBufferRW[home_e].vert;
                     tmp_e = home_e;
-                    while (_EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].stat == 1) {
+                    while (_EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].stat != 1) {
+                        
+                        tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].pair;
                         if (_EdgeBufferRW[tmp_e].vert != vertex_list[count - 1]) {
                             vertex_list[count++] = _EdgeBufferRW[tmp_e].vert;
                         }
-                        tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].pair;
                     }
                     break;
                 }
                 tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].next;
-                if (debug_counter++ > 64) {
-                    _VertBufferRW[ev].stat = 64;
-                    break;
-                };
             } while (tmp_e != _EdgeBufferRW[_EdgeBufferRW[home_e].pair].next);
 
             // statはすべて頂点数(亀裂数) に
@@ -422,10 +409,6 @@ void ReconnectEdges(uint id) {
                         }
                         break; 
                     }
-                    if (debug_counter++ > 64) {
-                        _VertBufferRW[epv].stat = 64;
-                        break;
-                    };
                     tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].next;
 
                 } while (tmp_e != _EdgeBufferRW[_EdgeBufferRW[home_e].pair].next);
@@ -460,10 +443,6 @@ void ReconnectEdges(uint id) {
                         }
                         break; 
                     }
-                    if (debug_counter++ > 64) {
-                        _VertBufferRW[env].stat = 64;
-                        break;
-                    };
                     tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].prev].pair;
 
                 } while (tmp_e != home_e);
@@ -475,7 +454,7 @@ void ReconnectEdges(uint id) {
         }
         else {
             // 亀裂の端点は修復後元に戻す
-            _VertBufferRW[epv].stat = 0;
+            _VertBufferRW[epv].stat = 1;
             _VertBufferRW[epv].lowest = 0;
             //_VertBufferRW[epv].rust = 0;
         }
@@ -1406,11 +1385,6 @@ void SetVertColor_Tear
         g = 0;
         b = 0;
     }
-    else if (_VertBufferRW[P_ID].stat == 64) {
-        r = 1;
-        g = 0;
-        b = 1;
-    }
     else if (_VertBufferRW[P_ID].stat > 2) {
         r = 0;
         g = 0;
@@ -2256,7 +2230,11 @@ void TearEdge
                     }
                 }
             }*/
-            _VertBufferRW[nvi].edge = groupR[0];
+            //_VertBufferRW[nvi].edge = groupR[0];    // home.pair.next
+            _VertBufferRW[nvi].edge = _EdgeBufferRW[_EdgeBufferRW[home_e].pair].next;
+            _VertBufferRW[_EdgeBufferRW[home_e].vert].edge = home_e;
+
+            //_VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[home_e].next].vert].edge = _EdgeBufferRW[home_e].next;
             for (int i = 0; i < countR; i++) {
                 SwapVertL(groupR[i], _EdgeBufferRW[groupR[i]].vert, nvi);
                 SwapVertL(_EdgeBufferRW[groupR[i]].next, _EdgeBufferRW[groupR[i]].vert, nvi);
@@ -2326,7 +2304,7 @@ void TearEdge
                 if (_EdgeBufferRW[tmp_e].stat == 1) {
                     //dR *= 0;
                     //countR = 0;
-                    break;
+                    //break;
                 }
                 dR += _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert].pos - _VertBufferRW[_EdgeBufferRW[tmp_e].vert].pos;
                 if (tmp_e != home_e) {
@@ -2418,7 +2396,11 @@ void TearEdge
                     }
                 }
             }*/
-            _VertBufferRW[nvi].edge = groupR[0];
+            //_VertBufferRW[nvi].edge = groupR[0];
+            _VertBufferRW[nvi].edge = _EdgeBufferRW[_EdgeBufferRW[home_e].pair].next;
+            _VertBufferRW[_EdgeBufferRW[home_e].vert].edge = home_e;
+            //_VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[home_e].next].vert].edge = _EdgeBufferRW[home_e].next;
+
             for (int i = 0; i < countR; i++) {
                 SwapVertL(groupR[i], _EdgeBufferRW[groupR[i]].vert, nvi);
                 SwapVertL(_EdgeBufferRW[groupR[i]].next, _EdgeBufferRW[groupR[i]].vert, nvi);
