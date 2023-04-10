@@ -45,6 +45,7 @@ struct Vert {
     uint edge;     // HalfEdge
     uint orig;
     float w;
+    float localSpeed;
 };
 
 struct Edge {

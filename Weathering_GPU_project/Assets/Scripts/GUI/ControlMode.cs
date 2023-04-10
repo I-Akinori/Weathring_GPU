@@ -28,6 +28,18 @@ namespace Weathering_GPU
             {
                 ctrl_mode = 3;
             }
+            else if (dropdown.value == 4)
+            {
+                ctrl_mode = 4;
+            }
+            else if (dropdown.value == 5)
+            {
+                ctrl_mode = 5;
+            }
+            else if (dropdown.value == 6)
+            {
+                ctrl_mode = 6;
+            }
         }
     }
 }
