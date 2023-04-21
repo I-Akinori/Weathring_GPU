@@ -90,6 +90,7 @@ namespace Weathering_GPU
             public uint Edge;
             public uint Orig;       // 元の頂点，分裂した頂点では (ID != Orig)
             public float Weight;
+            public float LocalSpeed;    // 局所時間経過速度
         };
         struct EdgeData
         {
@@ -159,6 +160,7 @@ namespace Weathering_GPU
         int SetVertColor_Normal;
         int SetVertColor_Separate;
         int SetVertColor_Tear;
+        int SetVertColor_Speed;
 
         int SetVertForces;
         int UpdateLiftingForce;
@@ -239,6 +241,7 @@ namespace Weathering_GPU
             SetVertColor_Normal = CS.FindKernel("SetVertColor_Normal");
             SetVertColor_Separate = CS.FindKernel("SetVertColor_Separate");
             SetVertColor_Tear = CS.FindKernel("SetVertColor_Tear");
+            SetVertColor_Speed = CS.FindKernel("SetVertColor_Speed");
             UpdateLiftingForce = CS.FindKernel("UpdateLiftingForce");
             UpdateVertForces = CS.FindKernel("UpdateVertForces");
             UpdateBindingForce = CS.FindKernel("UpdateBindingForce");
@@ -351,6 +354,7 @@ namespace Weathering_GPU
             CS.SetBuffer(SetVertColor_Tear, "_VertBufferRW", _vertBuffer);
             CS.SetBuffer(SetVertColor_Tear, "_EdgeBufferRW", _edgeBuffer);
             CS.SetBuffer(SetVertColor_Tear, "_FaceBufferRW", _faceBuffer);
+            CS.SetBuffer(SetVertColor_Speed, "_VertBufferRW", _vertBuffer);
 
             // ComputeVertCurvature
             CS.SetBuffer(ComputeVertCurvature, "_VertBufferRW", _vertBuffer);
@@ -530,27 +534,53 @@ namespace Weathering_GPU
                 CS.SetVector("_hit_point", drawpoint);
                 if (Input.GetMouseButton(0))
                 {
-                    if (ControlMode.ctrl_mode == 0)
+                    if (ControlMode.ctrl_mode == 0) // weathering
                     {
                         CS.SetInt("_control_separation", 1);
                         CS.SetInt("_control_tear", 1);
                         CS.SetInt("_control_stain", 0);
+                        CS.SetInt("_control_speed", 0);
                     }
-                    else if (ControlMode.ctrl_mode == 1)
+                    else if (ControlMode.ctrl_mode == 1)    // de-weathering
                     {
                         CS.SetInt("_control_separation", 2);
                         CS.SetInt("_control_tear", 2);
                         CS.SetInt("_control_stain", 0);
+                        CS.SetInt("_control_speed", 0);
                     }
-                    else if (ControlMode.ctrl_mode == 2)
+                    else if (ControlMode.ctrl_mode == 2)    // wash
                     {
                         CS.SetInt("_control_separation", 0);
                         CS.SetInt("_control_tear", 0);
                         CS.SetInt("_control_stain", 4);
-                    } else if (ControlMode.ctrl_mode == 3) {
+                        CS.SetInt("_control_speed", 0);
+                    } else if (ControlMode.ctrl_mode == 3)  // repair
+                    {
                         CS.SetInt("_control_separation", 3);
                         CS.SetInt("_control_tear", 3);
                         CS.SetInt("_control_stain", 4);
+                        CS.SetInt("_control_speed", 0);
+                    }
+                    else if (ControlMode.ctrl_mode == 4)    // speed up
+                    {
+                        CS.SetInt("_control_separation", 0);
+                        CS.SetInt("_control_tear", 0);
+                        CS.SetInt("_control_stain", 0);
+                        CS.SetInt("_control_speed", 1);
+                    }
+                    else if (ControlMode.ctrl_mode == 5)    // stop
+                    {
+                        CS.SetInt("_control_separation", 0);
+                        CS.SetInt("_control_tear", 0);
+                        CS.SetInt("_control_stain", 0);
+                        CS.SetInt("_control_speed", 2);
+                    }
+                    else if (ControlMode.ctrl_mode == 6)    // speed down
+                    {
+                        CS.SetInt("_control_separation", 0);
+                        CS.SetInt("_control_tear", 0);
+                        CS.SetInt("_control_stain", 0);
+                        CS.SetInt("_control_speed", 3);
                     }
                 }
             }
@@ -565,9 +595,13 @@ namespace Weathering_GPU
                     rend.material = subMat;
                     CS.Dispatch(SetVertColor_Separate, vertGS, 1, 1);
                     break;
-                default:
+                case 2:
                     rend.material = subMat;
                     CS.Dispatch(SetVertColor_Tear, vertGS, 1, 1);
+                    break;
+                default:
+                    rend.material = subMat;
+                    CS.Dispatch(SetVertColor_Speed, vertGS, 1, 1);
                     break;
             }
         }
@@ -791,6 +825,7 @@ namespace Weathering_GPU
             _vertCounterBuffer.GetData(countArr);
             //UnityEngine.Debug.Log(countArr[1]);
 
+<<<<<<< HEAD
             if (active_Fracture)
             {
                 CS.Dispatch(SeparateVertex, vertGS, 1, 1);
@@ -799,6 +834,15 @@ namespace Weathering_GPU
             }
             // 頂点単位の探索
             //CS.Dispatch(SearchVertices, vertGS, 1, 1); // ComputeShaderを実行
+=======
+            CS.Dispatch(SeparateVertex, vertGS, 1, 1);
+            if (SimulationSpeedSlider.SliderValue > 0)
+                CS.Dispatch(TearEdge, edgeGS, 1, 1);
+
+            // 頂点単位の探索 (ティザー用スピード切り替え)
+            if (Input.GetKeyDown(KeyCode.Space))
+                CS.Dispatch(SearchVertices, vertGS, 1, 1); // ComputeShaderを実行
+>>>>>>> try/vivePro2
 
             // GPU側で変更された頂点数の反映
             UpdateVertNum();
@@ -853,7 +897,11 @@ namespace Weathering_GPU
             filt.mesh.RecalculateBounds();
 
             // Debug
+<<<<<<< HEAD
             if (active_Debug)
+=======
+            if (false)
+>>>>>>> try/vivePro2
             {
                 var edgeArr = new EdgeData[filt.mesh.triangles.Length];
                 _edgeBuffer.GetData(edgeArr);

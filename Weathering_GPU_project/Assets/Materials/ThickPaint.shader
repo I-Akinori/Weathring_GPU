@@ -454,7 +454,7 @@ Shader "Custom/ThickPaint"
 			}
 			o.vertColor = IN[n].vertColor;
 
-			float3 worldPos = mul(unity_ObjectToWorld, IN[i].pos).xyz;
+			float3 worldPos = mul(unity_ObjectToWorld, IN[n].pos).xyz;
 			float3 worldNormal = normals[index_v[i]];
 			o.worldPos = worldPos;
 			o.worldNormal = worldNormal;
