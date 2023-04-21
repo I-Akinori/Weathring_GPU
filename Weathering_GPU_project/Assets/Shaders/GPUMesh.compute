@@ -47,10 +47,10 @@ RWStructuredBuffer<uint> _BlankIndex;
 
 // helper function for atomic add
 float3 RotateVector(float3 start, float3 goal, float3 target) {
-    float3 axis = cross(start, goal);
+    float3 axis = normalize(cross(start, goal));
 
     // ベクトルaとベクトルbの内積を求める
-    float angle = acos(dot(start, goal));
+    float angle = acos(dot(normalize(start), normalize(goal)));
 
     // 回転行列を作成する
     float c = cos(angle);
@@ -58,13 +58,13 @@ float3 RotateVector(float3 start, float3 goal, float3 target) {
     float t = 1 - c;
 
     float3x3 rotationMatrix = float3x3(
-        t * axis.x * axis.x + c, t * axis.x * axis.y + s * axis.z, t * axis.x * axis.z - s * axis.y,
-        t * axis.x * axis.y - s * axis.z, t * axis.y * axis.y + c, t * axis.y * axis.z + s * axis.x,
-        t * axis.x * axis.z + s * axis.y, t * axis.y * axis.z - s * axis.x, t * axis.z * axis.z + c
+        t * axis.x * axis.x + c, t * axis.x * axis.y - s * axis.z, t * axis.x * axis.z + s * axis.y,
+        t * axis.x * axis.y + s * axis.z, t * axis.y * axis.y + c, t * axis.y * axis.z - s * axis.x,
+        t * axis.x * axis.z - s * axis.y, t * axis.y * axis.z - s * axis.x, t * axis.z * axis.z + c
         );
 
     // ベクトルvを回転する
-    return mul(rotationMatrix, target);
+    return normalize(mul(rotationMatrix, target));
 }
 float FlowRust(uint source, uint target, uint path, float3 projected_grav) {
     Vert VS = _VertBufferRW[source];
@@ -1209,7 +1209,7 @@ void SetVertColor_Separate
     if (P_ID >= _VertNum) return;
     if (_VertBufferRW[P_ID].stat == 32) return;
 
-    float val = (_VertBufferRW[P_ID].bond - _VertBufferRW[P_ID].liftingForce);
+    float val = (max(_VertBufferRW[P_ID].bond, 0) - _VertBufferRW[P_ID].liftingForce);
     val = min(max(val / 100, 0), 1);
     float r = 0;
     float g = 0;
@@ -1504,7 +1504,7 @@ void UpdateLiftingForce
 
     Edge hei = _EdgeBufferRW[P_ID];
     
-    _EdgeBufferRW[P_ID].liftingForce = 1.0 * lifting_force_ratio * _FaceBufferRW[hei.face].contraction / (1 + exp(- 4 * hei.angle));
+    _EdgeBufferRW[P_ID].liftingForce = 1.0 * lifting_force_ratio * max(_FaceBufferRW[hei.face].contraction, 0) / (1 + exp(- 4 * hei.angle));
     
     // Edgeの探索からVert.liftingForceにアクセスするにはAtomic演算が必要になるので
     // UpdateVertForcesからVertの周りをぐるっと探索する方式に変更した
@@ -1533,10 +1533,10 @@ void UpdateVertForces
     if ((_control_separation > 0 || _control_stain > 0)
         && length(_VertBufferRW[P_ID].pos0 - _hit_point.xyz) < _hit_point.w) {
         if (_control_separation == 1) {
-            _VertBufferRW[P_ID].bond -= _VertBufferRW[P_ID].bond * 0.05;
+            _VertBufferRW[P_ID].bond -= max(_VertBufferRW[P_ID].bond, 0) * 0.05;
         }
         if (_control_separation > 1) {
-            _VertBufferRW[P_ID].bond += (_VertBufferRW[P_ID].liftingForce + 200 - _VertBufferRW[P_ID].bond) * 0.05;
+            _VertBufferRW[P_ID].bond += (_VertBufferRW[P_ID].liftingForce + 200 - max(_VertBufferRW[P_ID].bond, 0)) * 0.05;
             if (_control_separation == 3) {
                 ReattachVertex(P_ID);
                 ControlStain(P_ID);
@@ -1686,7 +1686,7 @@ void UpdateBindingForce
         }
     }
     _FaceBufferRW[P_ID].contraction += 0.5 * _delta_time;
-    if (_FaceBufferRW[P_ID].contraction < 0) _FaceBufferRW[P_ID].contraction = 0;
+    //if (_FaceBufferRW[P_ID].contraction < 0) _FaceBufferRW[P_ID].contraction = 0;
 
     _LengthConstraintBufferRW[ei].offset = _LengthConstraintBufferRW[ei].offset0 * (1.0 - _FaceBufferRW[_EdgeBufferRW[P_ID].face].contraction * 0.0001); //- _FaceBufferRW[P_ID].contraction / k2; //
     _LengthConstraintBufferRW[en].offset = _LengthConstraintBufferRW[en].offset0 * (1.0 - _FaceBufferRW[_EdgeBufferRW[P_ID].face].contraction * 0.0001); //- _FaceBufferRW[P_ID].contraction / k2; //
@@ -1696,7 +1696,7 @@ void UpdateBindingForce
     _BendConstraintBufferRW[en].offset = _BendConstraintBufferRW[en].offset0 + (_delta_time < 0 ? 0 : _curl);//min(_FaceBufferRW[P_ID].contraction / k2 * 100, 0.4);
     _BendConstraintBufferRW[ep].offset = _BendConstraintBufferRW[ep].offset0 + (_delta_time < 0 ? 0 : _curl);//min(_FaceBufferRW[P_ID].contraction / k2 * 100, 0.4);
 
-    _FaceBufferRW[P_ID].tension = _FaceBufferRW[P_ID].contraction;
+    _FaceBufferRW[P_ID].tension = max(_FaceBufferRW[P_ID].contraction, 0);
 
     float3 vi = _VertBufferRW[_EdgeBufferRW[ei].vert].pos;
     float3 vp = _VertBufferRW[_EdgeBufferRW[ep].vert].pos;
@@ -1735,16 +1735,17 @@ void SeparateVertex
     //_VertBufferRW[P_ID].col = float4(1, 1, 1, 0) * exp(-_VertBufferRW[P_ID].dust) + float4(0, 0, 0, 1);
 
     _VertBufferRW[P_ID].bond += -0.25 * _delta_time;
-    if (_VertBufferRW[P_ID].bond < 0) _VertBufferRW[P_ID].bond = 0;
+    //if (_VertBufferRW[P_ID].bond < 0) _VertBufferRW[P_ID].bond = 0;
 
     if (vi.stat > 0) {
         // 接着処理
         // 逆再生でなければ実行しない
         if (_delta_time > 0) return;
         // 条件1：付着力が揚力を上回る
-        if (vi.bond < vi.liftingForce)  return;
+        if (max(vi.bond, 0) < vi.liftingForce)  return;
         // 条件2：元の位置に十分近い
-        if (length(vi.pos - vi.pos0) > 0.01)  return;
+        float maxDistance = 0.01;
+        if (length(vi.pos - vi.pos0) > maxDistance)  return;
         int home_e = vi.edge;
         int tmp_e = home_e;
         uint count = 0;
@@ -1810,7 +1811,7 @@ void SeparateVertex
         */
     }
     else {
-        if (vi.bond > vi.liftingForce)  return;
+        if (max(vi.bond, 0) > vi.liftingForce)  return;
         if (_delta_time < 0) return;
 
         // 分離処理
@@ -1887,7 +1888,7 @@ void TearEdge
 
     float direct_thr = 0.75;
     float bind_ratio = 0.2;
-    float rp = 2.0;         // 張力緩和の係数
+    float rp = 1.0;         // 張力緩和の係数
 
     float tear_force = fit / (1 + exp(-2 * ei.angle)) + fpt / (1 + exp(-2 * ep.angle));
     float bind_force = (eib + epb) / 2;
@@ -2030,8 +2031,10 @@ void TearEdge
             float3 d = normalize(_VertBufferRW[ei.vert].pos - _VertBufferRW[ep.vert].pos);
             // 伸展の場合 (反対側のstatが3の場合) のみ過去の状態を参照する
             if (_VertBufferRW[ep.vert].stat == 3) {
-                float3 rotated_direction =
-                    RotateVector(_VertBufferRW[ep.vert].nor, _VertBufferRW[ei.vert].nor, _VertBufferRW[ep.vert].direction);
+                float3 n = _VertBufferRW[ei.vert].nor;
+                float3 rotated_direction = normalize(_VertBufferRW[ep.vert].direction - dot(_VertBufferRW[ep.vert].direction, n) * n);
+                //    RotateVector(_VertBufferRW[ep.vert].nor, _VertBufferRW[ei.vert].nor, _VertBufferRW[ep.vert].direction);
+                //rotated_direction = _VertBufferRW[ep.vert].direction;
                 d = d * (1.0 - _crack_history) + rotated_direction * _crack_history; // 前の方向を参照
             }
             _VertBufferRW[ei.vert].direction = normalize(d);
@@ -2045,8 +2048,10 @@ void TearEdge
             float3 d = normalize(_VertBufferRW[ep.vert].pos - _VertBufferRW[ei.vert].pos);
             // 伸展の場合 (反対側のstatが3の場合) のみ過去の状態を参照する
             if (_VertBufferRW[ei.vert].stat == 3) {
-                float3 rotated_direction =
-                    RotateVector(_VertBufferRW[ei.vert].nor, _VertBufferRW[ep.vert].nor, _VertBufferRW[ei.vert].direction);
+                float3 n = _VertBufferRW[ep.vert].nor;
+                float3 rotated_direction = normalize(_VertBufferRW[ei.vert].direction - dot(_VertBufferRW[ei.vert].direction, n) * n);
+                //    RotateVector(_VertBufferRW[ei.vert].nor, _VertBufferRW[ep.vert].nor, _VertBufferRW[ei.vert].direction);
+                //rotated_direction = _VertBufferRW[ei.vert].direction;
                 d = d * (1.0 - _crack_history) + rotated_direction * _crack_history; // 前の方向を参照
             }
             _VertBufferRW[ep.vert].direction = normalize(d);
@@ -2456,6 +2461,7 @@ void TearEdge
         }
     }
     else {
+        float maxDistance = 0.01;
         // 接合処理
         // 逆再生でなければ実行しない
         if (_delta_time > 0) return;
@@ -2466,8 +2472,14 @@ void TearEdge
             // 通常条件
             //crack = false;
         }
-        if (crack && (_VertBufferRW[ei.vert].stat == 2 || ei.stat == 3)) {
-            // 特殊条件 亀裂の端点だった場合，接合しにくい
+        if (crack && (_VertBufferRW[ei.vert].stat == 2 
+            || (ei.stat == 3 && ( length(_VertBufferRW[ei.vert].pos - _VertBufferRW[_EdgeBufferRW[ep.next].vert].pos) < maxDistance
+                                    || length(_VertBufferRW[ep.vert].pos - _VertBufferRW[_EdgeBufferRW[ei.next].vert].pos) < maxDistance
+                                ) 
+                )
+            )
+        ) {
+            // 特殊条件 亀裂の端点だった場合
             float3 ed = _VertBufferRW[ei.vert].pos - _VertBufferRW[ep.vert].pos;    // 断裂と逆方向であることに注意
             float rad = length(ed);
             ed /= rad;
@@ -2487,7 +2499,14 @@ void TearEdge
             if (tear_force / rp * s * _intensity < bind_force)
                 crack = false;
         }
-        if (crack && (_VertBufferRW[ep.vert].stat == 2 || ei.stat == 3)) {
+        if (crack && (_VertBufferRW[ep.vert].stat == 2 
+            || (ei.stat == 3 && (length(_VertBufferRW[ep.vert].pos - _VertBufferRW[_EdgeBufferRW[ei.next].vert].pos) < maxDistance
+                                    || length(_VertBufferRW[ei.vert].pos - _VertBufferRW[_EdgeBufferRW[ep.next].vert].pos) < maxDistance
+                                )
+                )
+            )
+        ) 
+        {
             // 特殊条件 亀裂の端点だった場合
             float3 ed = _VertBufferRW[ep.vert].pos - _VertBufferRW[ei.vert].pos;
             float rad = length(ed);

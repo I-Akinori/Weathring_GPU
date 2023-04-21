@@ -12,6 +12,10 @@ namespace Weathering_GPU
         private MeshFilter filt;
         private MeshRenderer rend;
         private MeshCollider coll;
+        [SerializeField] private bool active_PBD = true;
+        [SerializeField] private bool active_Fracture = true;
+        [SerializeField] private bool active_Stains = true;
+        [SerializeField] private bool active_Debug = true;
         [SerializeField] private Material mainMat;
         [SerializeField] private Material subMat;
         [SerializeField] private Material baseMat;
@@ -753,11 +757,14 @@ namespace Weathering_GPU
 
             CS.Dispatch(ComputeVertCurvature, vertGS, 1, 1);
             CS.Dispatch(ComputeEdgeCurvature, edgeGS, 1, 1);
-            CS.Dispatch(AccumulateDust, vertGS, 1, 1);
-            CS.Dispatch(SetRustBuffer, vertGS, 1, 1);
-            CS.Dispatch(PropagateRust, vertGS, 1, 1);
-            CS.Dispatch(ProceedChalking, vertGS, 1, 1);
 
+            if (active_Stains)
+            {
+                CS.Dispatch(AccumulateDust, vertGS, 1, 1);
+                CS.Dispatch(SetRustBuffer, vertGS, 1, 1);
+                CS.Dispatch(PropagateRust, vertGS, 1, 1);
+                CS.Dispatch(ProceedChalking, vertGS, 1, 1);
+            }
             //CS.SetFloat("length_ratio", 1.25f - 0.25f * Mathf.Cos(Time.time * 0.5f));
             CS.SetFloat("k1", 0.0f);
             CS.SetFloat("k2", 100000.0f);
@@ -766,22 +773,30 @@ namespace Weathering_GPU
             CS.SetFloat("_curl", curl);
             //CS.Dispatch(PBD_UpdateConstraint, edgeGS, 1, 1); // 制約更新
 
-            PBD_Simulation();
+            if (active_PBD)
+            {
+                PBD_Simulation();
+            }
 
-            // 揚力計算 (事前にComputeEdgeCurvatureを実行すること)
-            CS.Dispatch(SetVertForces, vertGS, 1, 1);
-            CS.Dispatch(UpdateLiftingForce, edgeGS, 1, 1);
-            CS.Dispatch(UpdateVertForces, vertGS, 1, 1);
-            CS.Dispatch(UpdateBindingForce, faceGS, 1, 1);
+            if (active_Fracture)
+            {
+                // 揚力計算 (事前にComputeEdgeCurvatureを実行すること)
+                CS.Dispatch(SetVertForces, vertGS, 1, 1);
+                CS.Dispatch(UpdateLiftingForce, edgeGS, 1, 1);
+                CS.Dispatch(UpdateVertForces, vertGS, 1, 1);
+                CS.Dispatch(UpdateBindingForce, faceGS, 1, 1);
+            }
 
             var countArr = new uint[2];
             _vertCounterBuffer.GetData(countArr);
             //UnityEngine.Debug.Log(countArr[1]);
 
-            CS.Dispatch(SeparateVertex, vertGS, 1, 1);
-            if (SimulationSpeedSlider.SliderValue > 0)
-                CS.Dispatch(TearEdge, edgeGS, 1, 1);
-
+            if (active_Fracture)
+            {
+                CS.Dispatch(SeparateVertex, vertGS, 1, 1);
+                if (SimulationSpeedSlider.SliderValue > 0)
+                    CS.Dispatch(TearEdge, edgeGS, 1, 1);
+            }
             // 頂点単位の探索
             //CS.Dispatch(SearchVertices, vertGS, 1, 1); // ComputeShaderを実行
 
@@ -838,7 +853,7 @@ namespace Weathering_GPU
             filt.mesh.RecalculateBounds();
 
             // Debug
-            if (true)
+            if (active_Debug)
             {
                 var edgeArr = new EdgeData[filt.mesh.triangles.Length];
                 _edgeBuffer.GetData(edgeArr);
@@ -865,7 +880,7 @@ namespace Weathering_GPU
                     };
                     if (vertArr[i].Status == 2) {
                         //if (vertArr[i].Direction.magnitude == 0)
-                        //UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[i].Pos), transform.TransformPoint(vertArr[i].Pos + vertArr[i].Direction * 0.05f), Color.red);
+                        UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[i].Pos), transform.TransformPoint(vertArr[i].Pos + vertArr[i].Direction * 0.05f), Color.cyan);
                     }
                     if (vertArr[i].OnEdge == 1 && false)
                     {
@@ -931,7 +946,7 @@ namespace Weathering_GPU
                     }
                     else if (edgeArr[i].Stat > 1)
                     {
-                        //UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[edgeArr[i].Vert].Pos), transform.TransformPoint(vertArr[edgeArr[edgeArr[i].Next].Vert].Pos), Color.magenta);
+                        UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[edgeArr[i].Vert].Pos), transform.TransformPoint(vertArr[edgeArr[edgeArr[i].Next].Vert].Pos), Color.red);
                     }
                 }
                 int lock_counter = 0;
@@ -944,7 +959,7 @@ namespace Weathering_GPU
                         lock_counter++;
                         //UnityEngine.Debug.Log("locked: " + i);
                         locked_verts.Add(i);
-                        UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + vertArr[i].Nor * 0.1f, Color.magenta);
+                        //UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + vertArr[i].Nor * 0.1f, Color.magenta);
                     };
                 }
                 for (int i = 0; i < blankArr.Length; i++)
