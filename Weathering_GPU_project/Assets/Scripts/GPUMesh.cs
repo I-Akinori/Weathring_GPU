@@ -1,4 +1,4 @@
-using System.Collections;
+ï»¿using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using UnityEngine;
@@ -15,6 +15,7 @@ namespace Weathering_GPU
         [SerializeField] private bool active_PBD = true;
         [SerializeField] private bool active_Fracture = true;
         [SerializeField] private bool active_Stains = true;
+        [SerializeField] private bool active_UV = true;
         [SerializeField] private bool active_Debug = true;
         [SerializeField] private Material mainMat;
         [SerializeField] private Material subMat;
@@ -43,8 +44,8 @@ namespace Weathering_GPU
         //private int count = 0;
         struct LengthConstraintData
         {
-            public uint P0; // ’[“_1
-            public uint P1; // ’[“_2
+            public uint P0; // ï¿½[ï¿½_1
+            public uint P1; // ï¿½[ï¿½_2
             public float Offset;
             public float Offset0;
             public float Stiff;
@@ -52,10 +53,10 @@ namespace Weathering_GPU
         };
         struct BendConstraintData
         {
-            public uint P0; // ’[“_1
-            public uint P1; // ’[“_2
-            public uint P2; // ’[“_3
-            public uint P3; // ’[“_4
+            public uint P0; // ï¿½[ï¿½_1
+            public uint P1; // ï¿½[ï¿½_2
+            public uint P2; // ï¿½[ï¿½_3
+            public uint P3; // ï¿½[ï¿½_4
             public float Offset;
             public float Offset0;
             public float Stiff;
@@ -63,34 +64,34 @@ namespace Weathering_GPU
         };
         struct VertData
         {
-            public Vector3 Pos; // ˆÊ’u
-            public Vector3 Nor; // –@ü
-            public Vector3 Pos0; // ‰ŠúˆÊ’u
-            public Vector3 Nor0; // ‰Šú–@ü
-            public Vector3 Vel; // (‹^—) ‘¬“x
-            public Vector3 Ass; // „’èˆÊ’u
-            public Vector3 Frc; // —Í
-            public Vector3 Del; // •ÏˆÊ
+            public Vector3 Pos; // ï¿½Ê’u
+            public Vector3 Nor; // ï¿½@ï¿½ï¿½
+            public Vector3 Pos0; // ï¿½ï¿½ï¿½ï¿½ï¿½Ê’u
+            public Vector3 Nor0; // ï¿½ï¿½ï¿½ï¿½ï¿½@ï¿½ï¿½
+            public Vector3 Vel; // (ï¿½^ï¿½ï¿½) ï¿½ï¿½ï¿½x
+            public Vector3 Ass; // ï¿½ï¿½ï¿½ï¿½Ê’u
+            public Vector3 Frc; // ï¿½ï¿½
+            public Vector3 Del; // ï¿½Ïˆï¿½
             public Vector2 uv;
             public Color Col;
-            public float Cur; // ‹È—¦
+            public float Cur; // ï¿½È—ï¿½
 
             public float Rust;
             public float Rust_Buf;
             public float Dust;
             public float Chalk;
             public float Bond;
-            public float LiftingForce;     // ‰Â‹‰»—p
+            public float LiftingForce;     // ï¿½Âï¿½ï¿½ï¿½ï¿½p
             public uint Status;
-            public Vector3 Direction;  // ‚Ğ‚ÑŠ„‚ê‚Ì•ûŒü (status == 1 ‚Ì‚Æ‚«‚ÉQÆ)
+            public Vector3 Direction;  // ï¿½Ğ‚ÑŠï¿½ï¿½ï¿½Ì•ï¿½ï¿½ï¿½ (status == 1 ï¿½Ì‚Æ‚ï¿½ï¿½ÉQï¿½ï¿½)
             public uint OnEdge;
             public uint Lowest;
             public float Thickness;
 
             public uint Edge;
-            public uint Orig;       // Œ³‚Ì’¸“_C•ª—ô‚µ‚½’¸“_‚Å‚Í (ID != Orig)
+            public uint Orig;       // ï¿½ï¿½ï¿½Ì’ï¿½ï¿½_ï¿½Cï¿½ï¿½ï¿½ô‚µ‚ï¿½ï¿½ï¿½ï¿½_ï¿½Å‚ï¿½ (ID != Orig)
             public float Weight;
-            public float LocalSpeed;    // ‹ÇŠŠÔŒo‰ß‘¬“x
+            public float LocalSpeed;    // ï¿½Çï¿½ï¿½ï¿½ï¿½ÔŒoï¿½ß‘ï¿½ï¿½x
         };
         struct EdgeData
         {
@@ -116,18 +117,18 @@ namespace Weathering_GPU
         };
         struct VertexData
         {
-            public Vector3 Pos; // ˆÊ’u
-            public Vector3 Nor; // –@ü
+            public Vector3 Pos; // ï¿½Ê’u
+            public Vector3 Nor; // ï¿½@ï¿½ï¿½
             public Vector2 UV;
             public Vector4 Col;
         };
 
         VertexAttributeDescriptor[] layout = new[]
         {
-            // Position, Normal, Tangent, TexCoord ... ‚Ì‡”Ô‚ğç‚ç‚È‚¢‚ÆƒoƒO‚éD‚µ‚©‚àColor‚ğg‚¤‚ÆƒoƒO‚é‚Ì‚ÅTexCoord‚ğg‚¤•K—v‚ª‚ ‚é‚Æ‚Ì‚±‚Æ
+            // Position, Normal, Tangent, TexCoord ... ï¿½Ìï¿½ï¿½Ô‚ï¿½ï¿½ï¿½È‚ï¿½ï¿½Æƒoï¿½Oï¿½ï¿½Dï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Colorï¿½ï¿½gï¿½ï¿½ï¿½Æƒoï¿½Oï¿½ï¿½Ì‚ï¿½TexCoordï¿½ï¿½gï¿½ï¿½ï¿½Kï¿½vï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ‚Ì‚ï¿½ï¿½ï¿½
             new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3),
             new VertexAttributeDescriptor(VertexAttribute.Normal, VertexAttributeFormat.Float32, 3),
-            //new VertexAttributeDescriptor(VertexAttribute.Color, VertexAttributeFormat.Float32, 4), Color‚Íg‚¦‚È‚¢
+            //new VertexAttributeDescriptor(VertexAttribute.Color, VertexAttributeFormat.Float32, 4), Colorï¿½Ígï¿½ï¿½ï¿½È‚ï¿½
             new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 2),
             new VertexAttributeDescriptor(VertexAttribute.TexCoord1, VertexAttributeFormat.Float32, 4),
         };
@@ -173,26 +174,26 @@ namespace Weathering_GPU
         int count = 0;
         const int SIMULATION_BLOCK_SIZE = 256;
         public ComputeShader CS;
-        GraphicsBuffer _positionBuffer;      // ‰Šú‰»—p
+        GraphicsBuffer _positionBuffer;      // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½p
         GraphicsBuffer _normalBuffer;
-        GraphicsBuffer _basePositionBuffer;      // Šî”Â—p
+        GraphicsBuffer _basePositionBuffer;      // ï¿½ï¿½Â—p
         GraphicsBuffer _baseNormalBuffer;
         GraphicsBuffer _uvBuffer;
-        GraphicsBuffer _lengthConstraintBuffer;      // PBD—p
+        GraphicsBuffer _lengthConstraintBuffer;      // PBDï¿½p
         GraphicsBuffer _bendConstraintBuffer;
         GraphicsBuffer _deltaPosAsInt;
         GraphicsBuffer _deltaCount;
         GraphicsBuffer _liftingForceAsInt;
         GraphicsBuffer _liftingForceCount;
 
-        GraphicsBuffer _vertBuffer;      // ƒn[ƒtƒGƒbƒW\‘¢—p
+        GraphicsBuffer _vertBuffer;      // ï¿½nï¿½[ï¿½tï¿½Gï¿½bï¿½Wï¿½\ï¿½ï¿½ï¿½p
         GraphicsBuffer _edgeBuffer;
         GraphicsBuffer _faceBuffer;
-        GraphicsBuffer _vertexBuffer;    // •`‰æ—p
+        GraphicsBuffer _vertexBuffer;    // ï¿½`ï¿½ï¿½p
         GraphicsBuffer _triangleBuffer;
 
-        GraphicsBuffer _lockProcessBuffer;     // 1ƒtƒŒ[ƒ€‚Å1“x‚µ‚©”F‚ß‚È‚¢ˆ—
-        GraphicsBuffer _vertCounterBuffer;           // GPU‘¤‚Å‚Ì•ÏX‚ğ‹–‚·’¸“_‚Ì”
+        GraphicsBuffer _lockProcessBuffer;     // 1ï¿½tï¿½ï¿½ï¿½[ï¿½ï¿½ï¿½ï¿½1ï¿½xï¿½ï¿½ï¿½ï¿½ï¿½Fï¿½ß‚È‚ï¿½ï¿½ï¿½ï¿½ï¿½
+        GraphicsBuffer _vertCounterBuffer;           // GPUï¿½ï¿½ï¿½Å‚Ì•ÏXï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½_ï¿½Ìï¿½
         GraphicsBuffer _blankIndexBuffer;
 
         void InitNums()
@@ -257,9 +258,9 @@ namespace Weathering_GPU
             CS.SetInt("_BConstNum", conBNum);
 
             sw.Start();
-            // ƒoƒbƒtƒ@‚ğ‰Šú‰»
-            // ’¸“_‚Ì”‚ÍÅ‘å‚ÅOŠpŒ`‚Ì3”{edgeNum‚È‚Ì‚Å‚»‚Ì•ª‚Ìƒoƒbƒtƒ@‚¾‚¯Šm•Û‚µ‚Ä‚¨‚­
-            // ’¸“_ (ƒn[ƒtƒGƒbƒW\‘¢)
+            // ï¿½oï¿½bï¿½tï¿½@ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+            // ï¿½ï¿½ï¿½_ï¿½Ìï¿½ï¿½ÍÅ‘ï¿½ÅOï¿½pï¿½`ï¿½ï¿½3ï¿½{ï¿½ï¿½edgeNumï¿½È‚Ì‚Å‚ï¿½ï¿½Ì•ï¿½ï¿½Ìƒoï¿½bï¿½tï¿½@ï¿½ï¿½ï¿½ï¿½ï¿½mï¿½Û‚ï¿½ï¿½Ä‚ï¿½ï¿½ï¿½
+            // ï¿½ï¿½ï¿½_ (ï¿½nï¿½[ï¿½tï¿½Gï¿½bï¿½Wï¿½\ï¿½ï¿½)
             _vertBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(VertData)));
             _positionBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(Vector3)));
             _positionBuffer.SetData(filt.mesh.vertices);
@@ -275,13 +276,13 @@ namespace Weathering_GPU
             CS.SetBuffer(InitVert, "_NormalBuffer", _normalBuffer);
             CS.SetBuffer(InitVert, "_UVBuffer", _uvBuffer);
             CS.SetBuffer(InitVert, "_VertBufferRW", _vertBuffer);
-            CS.Dispatch(InitVert, vertGS, 1, 1); // ComputeShader‚ğÀs
+            CS.Dispatch(InitVert, vertGS, 1, 1); // ComputeShaderï¿½ï¿½ï¿½ï¿½s
 
             UnityEngine.Debug.Log(sw.Elapsed);
-            // ’¸“_ (Mesh—p)
+            // ï¿½ï¿½ï¿½_ (Meshï¿½p)
             _vertexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(VertexData)));
 
-            // ”¼—ÅüE–Ê (ƒn[ƒtƒGƒbƒW\‘¢)
+            // ï¿½ï¿½ï¿½Åï¿½ï¿½Eï¿½ï¿½ (ï¿½nï¿½[ï¿½tï¿½Gï¿½bï¿½Wï¿½\ï¿½ï¿½)
             _edgeBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(EdgeData)));
             _faceBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, faceNum, Marshal.SizeOf(typeof(FaceData)));
 
@@ -295,7 +296,7 @@ namespace Weathering_GPU
             CS.SetBuffer(InitEdge, "_TriangleBufferRW", _triangleBuffer);
             CS.Dispatch(InitEdge, faceGS, 1, 1);
 
-            // ’¸“_ƒf[ƒ^XV—pintƒoƒbƒtƒ@
+            // ï¿½ï¿½ï¿½_ï¿½fï¿½[ï¿½^ï¿½Xï¿½Vï¿½pintï¿½oï¿½bï¿½tï¿½@
             PBD_Itteration_L = CS.FindKernel("PBD_Itteration_L");
             _deltaPosAsInt = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(Vector3Int)));
             _deltaCount = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(int)));
@@ -308,12 +309,12 @@ namespace Weathering_GPU
 
             _lockProcessBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(uint)));
             _vertCounterBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 2, Marshal.SizeOf(typeof(uint)));
-            // ‘æ0—v‘f‚Í’¸“_”C‘æ1—v‘f‚Í‹ó‚«‚Ì”
+            // ï¿½ï¿½0ï¿½vï¿½fï¿½Í’ï¿½ï¿½_ï¿½ï¿½ï¿½Cï¿½ï¿½1ï¿½vï¿½fï¿½Í‹ó‚«‚Ìï¿½
             _vertCounterBuffer.SetData(new int[] { vertNum, 0 });
 
-            // íœ‚Å‹ó‚¢‚½ƒCƒ“ƒfƒbƒNƒX‚ğŠi”[‚·‚é”z—ñ
+            // ï¿½íœï¿½Å‹ó‚¢‚ï¿½ï¿½Cï¿½ï¿½ï¿½fï¿½bï¿½Nï¿½Xï¿½ï¿½iï¿½[ï¿½ï¿½ï¿½ï¿½zï¿½ï¿½
             _blankIndexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, edgeNum, Marshal.SizeOf(typeof(uint)));
-            // ƒoƒbƒtƒ@‚ÌƒZƒbƒg
+            // ï¿½oï¿½bï¿½tï¿½@ï¿½ÌƒZï¿½bï¿½g
             // InitEdge
 
             // SetTriangles
@@ -469,10 +470,10 @@ namespace Weathering_GPU
             CS.SetInt("_LConstNum", conLNum);
             CS.SetInt("_BConstNum", conBNum);
 
-            // ’¸“_î•ñXV
+            // ï¿½ï¿½ï¿½_ï¿½ï¿½ï¿½Xï¿½V
             CS.Dispatch(PBD_StartFrame, vertGS, 1, 1);
 
-            // ƒCƒeƒŒ[ƒVƒ‡ƒ“
+            // ï¿½Cï¿½eï¿½ï¿½ï¿½[ï¿½Vï¿½ï¿½ï¿½ï¿½
 
             for (int i = 0; i < 50; i++)
             {
@@ -484,19 +485,19 @@ namespace Weathering_GPU
                 CS.Dispatch(PBD_Update_Ass, vertGS, 1, 1);
             }
 
-            // ’¸“_î•ñXV
+            // ï¿½ï¿½ï¿½_ï¿½ï¿½ï¿½Xï¿½V
             CS.Dispatch(PBD_Update_Pos, vertGS, 1, 1);
         }
         void SetPairEdge()
         {
-            // ’¸“_’PˆÊ‚Ì’Tõ
+            // ï¿½ï¿½ï¿½_ï¿½Pï¿½Ê‚Ì’Tï¿½ï¿½
             CS.SetInt("_EdgeNum", edgeNum);
             //CS.SetBuffer(SetPair, "_TriangleBufferRW", _triangleBuffer);
-            CS.Dispatch(SetPair, edgeGS, 1, 1); // ComputeShader‚ğÀs
+            CS.Dispatch(SetPair, edgeGS, 1, 1); // ComputeShaderï¿½ï¿½ï¿½ï¿½s
         }
         void SetConstraint()
         {
-            // ƒeƒXƒg—pPBD§–ñ (—Åü‚Ì’·‚³‚ğ0.1‚É)
+            // ï¿½eï¿½Xï¿½gï¿½pPBDï¿½ï¿½ï¿½ï¿½ (ï¿½Åï¿½ï¿½Ì’ï¿½ï¿½ï¿½ï¿½ï¿½0.1ï¿½ï¿½)
 
             CS.SetBuffer(TestPBD, "_EdgeBufferRW", _edgeBuffer);
             CS.SetBuffer(TestPBD, "_VertBufferRW", _vertBuffer);
@@ -719,7 +720,7 @@ namespace Weathering_GPU
         }
         void OnDestroy()
         {
-            // ƒoƒbƒtƒ@‚ğ”jŠü
+            // ï¿½oï¿½bï¿½tï¿½@ï¿½ï¿½jï¿½ï¿½
             ReleaseBuffer();
         }
         void SetBaseMesh()
@@ -777,7 +778,7 @@ namespace Weathering_GPU
 
             CS.SetVector("_gravity", new Vector4(0, -1, 0, 0));
 
-            locked_verts = new List<int>();     // ƒfƒoƒbƒO—p
+            locked_verts = new List<int>();     // ï¿½fï¿½oï¿½bï¿½Oï¿½p
         }
 
         // Update is called once per frame
@@ -786,7 +787,7 @@ namespace Weathering_GPU
 
             CS.SetFloat("_delta_time", Time.deltaTime * SimulationSpeedSlider.SliderValue * (ReverseToggle._reverse ? - 1 : 1));
 
-            // GPU‚Å’¸“_‚ª’Ç‰Á‚³‚ê‚½ê‡AvertNumˆÈã‚ÌID‚É‘Î‚µ‚ÄQÆ‚³‚ê‚¤‚é‚Ì‚ÅedgeNum‚ÅŒÅ’è‚·‚é
+            // GPUï¿½Å’ï¿½ï¿½_ï¿½ï¿½ï¿½Ç‰ï¿½ï¿½ï¿½ï¿½ê‚½ï¿½ê‡ï¿½AvertNumï¿½Èï¿½ï¿½IDï¿½É‘Î‚ï¿½ï¿½ÄQï¿½Æ‚ï¿½ï¿½ê‚¤ï¿½ï¿½Ì‚ï¿½edgeNumï¿½ÅŒÅ’è‚·ï¿½ï¿½
             _lockProcessBuffer.SetData(new uint[edgeNum]);
 
             CS.Dispatch(ComputeVertCurvature, vertGS, 1, 1);
@@ -805,7 +806,7 @@ namespace Weathering_GPU
             CS.SetFloat("_intensity", intensity);
             CS.SetFloat("_crack_history", history);
             CS.SetFloat("_curl", curl);
-            //CS.Dispatch(PBD_UpdateConstraint, edgeGS, 1, 1); // §–ñXV
+            //CS.Dispatch(PBD_UpdateConstraint, edgeGS, 1, 1); // ï¿½ï¿½ï¿½ï¿½Xï¿½V
 
             if (active_PBD)
             {
@@ -814,7 +815,7 @@ namespace Weathering_GPU
 
             if (active_Fracture)
             {
-                // —g—ÍŒvZ (–‘O‚ÉComputeEdgeCurvature‚ğÀs‚·‚é‚±‚Æ)
+                // ï¿½gï¿½ÍŒvï¿½Z (ï¿½ï¿½ï¿½Oï¿½ï¿½ComputeEdgeCurvatureï¿½ï¿½ï¿½ï¿½sï¿½ï¿½ï¿½é‚±ï¿½ï¿½)
                 CS.Dispatch(SetVertForces, vertGS, 1, 1);
                 CS.Dispatch(UpdateLiftingForce, edgeGS, 1, 1);
                 CS.Dispatch(UpdateVertForces, vertGS, 1, 1);
@@ -825,38 +826,30 @@ namespace Weathering_GPU
             _vertCounterBuffer.GetData(countArr);
             //UnityEngine.Debug.Log(countArr[1]);
 
-<<<<<<< HEAD
             if (active_Fracture)
             {
                 CS.Dispatch(SeparateVertex, vertGS, 1, 1);
                 if (SimulationSpeedSlider.SliderValue > 0)
                     CS.Dispatch(TearEdge, edgeGS, 1, 1);
             }
-            // ’¸“_’PˆÊ‚Ì’Tõ
-            //CS.Dispatch(SearchVertices, vertGS, 1, 1); // ComputeShader‚ğÀs
-=======
-            CS.Dispatch(SeparateVertex, vertGS, 1, 1);
-            if (SimulationSpeedSlider.SliderValue > 0)
-                CS.Dispatch(TearEdge, edgeGS, 1, 1);
 
-            // ’¸“_’PˆÊ‚Ì’Tõ (ƒeƒBƒU[—pƒXƒs[ƒhØ‚è‘Ö‚¦)
+            // é ‚ç‚¹å˜ä½ã®æ¢ç´¢ (ãƒ†ã‚£ã‚¶ãƒ¼ç”¨ã‚¹ãƒ”ãƒ¼ãƒ‰åˆ‡ã‚Šæ›¿ãˆ)
             if (Input.GetKeyDown(KeyCode.Space))
-                CS.Dispatch(SearchVertices, vertGS, 1, 1); // ComputeShader‚ğÀs
->>>>>>> try/vivePro2
+                CS.Dispatch(SearchVertices, vertGS, 1, 1); // ComputeShaderã‚’å®Ÿè¡Œ
 
-            // GPU‘¤‚Å•ÏX‚³‚ê‚½’¸“_”‚Ì”½‰f
+            // GPUï¿½ï¿½ï¿½Å•ÏXï¿½ï¿½ï¿½ê‚½ï¿½ï¿½ï¿½_ï¿½ï¿½ï¿½Ì”ï¿½ï¿½f
             UpdateVertNum();
 
             var vertArr = new VertData[vertNum];
             _vertBuffer.GetData(vertArr);
 
             InteractiveControl();
-            // –@üXV (reculcurate normals‚ªƒoƒO‚é‚Ì‚Å©‘O‚ÅÀ‘•)
+            // ï¿½@ï¿½ï¿½ï¿½Xï¿½V (reculcurate normalsï¿½ï¿½ï¿½oï¿½Oï¿½ï¿½Ì‚Åï¿½ï¿½Oï¿½Åï¿½ï¿½ï¿½)
             CS.Dispatch(SetFaceNormals, faceGS, 1, 1);
             CS.Dispatch(SetVertNormals, vertGS, 1, 1);
 
-            // ’¸“_î•ñ
-            CS.Dispatch(SetVertices, vertGS, 1, 1); // ComputeShader‚ğÀs
+            // ï¿½ï¿½ï¿½_ï¿½ï¿½ï¿½
+            CS.Dispatch(SetVertices, vertGS, 1, 1); // ComputeShaderï¿½ï¿½ï¿½ï¿½s
             var vertexArr = new VertexData[vertNum];
             _vertexBuffer.GetData(vertexArr);
             //UnityEngine.Debug.Log(vertexArr[100].UV);
@@ -886,8 +879,8 @@ namespace Weathering_GPU
             //filt.mesh.colors = colArr;
             //filt.mesh.uv = uvArr;
 
-            // OŠpŒ`ƒCƒ“ƒfƒbƒNƒX
-            CS.Dispatch(SetTriangles, faceGS, 1, 1); // ComputeShader‚ğÀs
+            // ï¿½Oï¿½pï¿½`ï¿½Cï¿½ï¿½ï¿½fï¿½bï¿½Nï¿½X
+            CS.Dispatch(SetTriangles, faceGS, 1, 1); // ComputeShaderï¿½ï¿½ï¿½ï¿½s
             var triangleArr = new int[faceNum * 3];
             _triangleBuffer.GetData(triangleArr);
             filt.mesh.SetIndexBufferData(triangleArr, 0, 0, faceNum * 3);
@@ -897,11 +890,7 @@ namespace Weathering_GPU
             filt.mesh.RecalculateBounds();
 
             // Debug
-<<<<<<< HEAD
             if (active_Debug)
-=======
-            if (false)
->>>>>>> try/vivePro2
             {
                 var edgeArr = new EdgeData[filt.mesh.triangles.Length];
                 _edgeBuffer.GetData(edgeArr);

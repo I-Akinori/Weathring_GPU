@@ -80,6 +80,7 @@ Shader "Custom/ThickPaint"
 		rc1 = fixed4(100.0 / 255.0, 50.0 / 255.0, 0.0, 1.0);
 		fixed4 rust_col = rc0 * (1 - rust) + rc1 * rust;
 
+		//c = c * (1 - rust) + rc0 * rust;
 		c = c * rust_mask;
 		c = c * (1 - rust * 0.1) + rust_col * rust * 0.1;
 		c = c * (1 - dust);
@@ -365,6 +366,8 @@ Shader "Custom/ThickPaint"
 		rc1 = fixed4(100.0 / 255.0, 50.0 / 255.0, 0.0, 1.0);
 		fixed4 rust_col = rc0 * (1 - rust) + rc1 * rust;
 
+
+		//c = c * (1 - rust) + rc0 * rust;
 		c = c * rust_mask;
 		c = c * (1 - rust * 0.1) + rust_col * rust * 0.1;
 		c = c * (1 - dust);

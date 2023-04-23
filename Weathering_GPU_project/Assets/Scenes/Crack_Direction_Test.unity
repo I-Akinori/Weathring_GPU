@@ -4332,15 +4332,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b5944e247ba84864bbe1da2495aac9f8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  active_PBD: 0
+  active_PBD: 1
   active_Fracture: 1
-  active_Stains: 0
+  active_Stains: 1
   active_Debug: 1
-  mainMat: {fileID: -3033667219593020291, guid: b98d48746dd81df419c9d0b29d2f8759, type: 3}
+  mainMat: {fileID: 2100000, guid: 793f77cb6412338418c2ec8e51b7111a, type: 2}
   subMat: {fileID: 2100000, guid: 5c722ea8737ca16458f7f8adeaadaeb7, type: 2}
   baseMat: {fileID: 2100000, guid: 4a44196c05d512f41a64d22626a5da65, type: 2}
   intensity: 1
-  history: 1
+  history: 0.5
   curl: 0.4
   CS: {fileID: 7200000, guid: c199bc15ed28da441a805200ac94d548, type: 3}
 --- !u!23 &1691331118
