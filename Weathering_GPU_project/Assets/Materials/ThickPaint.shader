@@ -82,10 +82,10 @@ Shader "Custom/ThickPaint"
 
 		//c = c * (1 - rust) + rc0 * rust;
 		c = c * rust_mask;
-		c = c * (1 - rust * 0.1) + rust_col * rust * 0.1;
+		c = c * (1 - rust * 0.2) + rust_col * rust * 0.2;
 		c = c * (1 - dust);
-		g = _Glossiness * (1 - rust * 0.1) * (1 - dust) * (1 - chalk);
-		m = _Metallic * (1 - rust * 0.1) * (1 - dust) * (1 - chalk);
+		g = _Glossiness * (1 - rust * 0.2) * (1 - dust) * (1 - chalk);
+		m = _Metallic * (1 - rust * 0.2) * (1 - dust) * (1 - chalk);
 
 		o.Metallic = m;
 		o.Smoothness = g;
@@ -369,10 +369,10 @@ Shader "Custom/ThickPaint"
 
 		//c = c * (1 - rust) + rc0 * rust;
 		c = c * rust_mask;
-		c = c * (1 - rust * 0.1) + rust_col * rust * 0.1;
+		c = c * (1 - rust * 0.2) + rust_col * rust * 0.2;
 		c = c * (1 - dust);
-		g = _Glossiness * (1 - rust * 0.1) * (1 - dust) * (1 - chalk);
-		m = _Metallic * (1 - rust * 0.1) * (1 - dust) * (1 - chalk);
+		g = _Glossiness * (1 - rust * 0.2) * (1 - dust) * (1 - chalk);
+		m = _Metallic * (1 - rust * 0.2) * (1 - dust) * (1 - chalk);
 
 		o.Metallic = m;
 		o.Smoothness = g;

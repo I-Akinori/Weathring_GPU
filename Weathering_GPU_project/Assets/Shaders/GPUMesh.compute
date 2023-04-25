@@ -72,23 +72,56 @@ float FlowRust(uint source, uint target, uint path, float3 projected_grav) {
     Vert VT = _VertBufferRW[target];
     float rust_thr = 0.1;
     float rust_thr2 = 0.45;
+    float rust_amount_thr = 0.2;
     float rust_ratio = 0.1;
+    float rust_speed = 0.05;
     float val = 0;
-    if (VS.onEdge == 0) {
-        // 順伝搬の場合のみ，10未満の点から錆を受け取らない
-        if (_delta_time * _VertBufferRW[target].localSpeed > 0 && VS.rust < 0.1)
-            return 0;
-        if (VS.rust < 1.0 || VS.lowest == 1) {
-            float product = dot(normalize(VT.pos - VS.pos), projected_grav)
-                / (1.0 + exp(-_EdgeBufferRW[path].angle)); // 曲率効果: 溝ほど流れやすい
-            if (product > rust_thr) {
-                val = product - rust_thr;
-                if (product < rust_thr2)
-                    val *= rust_ratio;
-            }
+    // 流出源には変化が起きない
+    if (VT.lowest == 1)
+        return 0;
+    // 進行
+    if (_delta_time * _VertBufferRW[target].localSpeed > 0) {
+        // 流入量 (VSが上の場合)
+        float product = dot(normalize(VT.pos - VS.pos), projected_grav)
+            ;// (1.0 + exp(-_EdgeBufferRW[path].angle)); // 曲率効果: 溝ほど流れやすい
+        if (product > rust_thr && VS.rust_buf > rust_amount_thr) {
+            val = product - rust_thr;
+            if (product < rust_thr2)
+                val *= rust_ratio;
+            val *= VS.rust_buf - rust_amount_thr;
         }
+        // 流出量 (VSが下の場合)
+        if (-product > rust_thr && VT.rust_buf > rust_amount_thr) {
+            val = product + rust_thr;
+            if (-product < rust_thr2)
+                val *= rust_ratio;
+            val *= VT.rust_buf - rust_amount_thr;
+            //val *= 0.95;
+        }
+        return val * _delta_time * _VertBufferRW[target].localSpeed * rust_speed;
     }
-    return val * _delta_time * _VertBufferRW[target].localSpeed * 0.05;
+    else {// 逆行
+        // 上への流出量 (VSが上の場合)
+        float product = dot(normalize(VT.pos - VS.pos), projected_grav)
+            ;// (1.0 + exp(-_EdgeBufferRW[path].angle)); // 曲率効果: 溝ほど流れやすい
+        if (product > rust_thr) {
+            val = product - rust_thr;
+            if (product < rust_thr2)
+                val *= rust_ratio;
+            val *= VT.rust_buf;
+        }
+        // 下からの流入量 (VSが下の場合)
+        if (-product > rust_thr) {
+            val = product + rust_thr;
+            if (-product < rust_thr2)
+                val *= rust_ratio;
+            val *= VS.rust_buf;
+        }
+        if (VT.rust < rust_amount_thr && val < 0) return 0;
+
+        return val * _delta_time * _VertBufferRW[target].localSpeed * rust_speed * (1.0 - rust_amount_thr);
+    }
+    
 }
 void AtomicAddDelta(int indexIntoDeltaPos, float newDeltaVal, int axis) {
     uint i_val = asuint(newDeltaVal);
@@ -556,7 +589,7 @@ void InitVert
     _VertBufferRW[P_ID].localSpeed = 1;
 
     _VertBufferRW[P_ID].uv = _UVBuffer[P_ID];
-    _VertBufferRW[P_ID].uv.x = (- _VertBufferRW[P_ID].pos0.x * 0.3 + 0.6);
+    _VertBufferRW[P_ID].uv.x = 0;// (-_VertBufferRW[P_ID].pos0.x * 0.3 + 0.6);
     _VertBufferRW[P_ID].uv.y = _VertBufferRW[P_ID].pos0.y * 0.3 + 0.5;
     //_VertBufferRW[P_ID].edge = -1;
 
@@ -835,8 +868,7 @@ void PropagateRust
         // 反時計回り: tmp_eは頂点から出る方向
         // 反時計回り処理: すべてのtmp_e
         _VertBufferRW[P_ID].rust +=
-            FlowRust(_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert, P_ID, tmp_e, projected_grav) * 
-            _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert].rust_buf;
+            FlowRust(_EdgeBufferRW[_EdgeBufferRW[tmp_e].next].vert, P_ID, tmp_e, projected_grav);
 
         if (_EdgeBufferRW[tmp_e].stat > 0) {
             // 反時計回処理: 断裂したtmp_e
@@ -844,16 +876,14 @@ void PropagateRust
             tmp_e = _EdgeBufferRW[home_e].prev;
             while (_EdgeBufferRW[tmp_e].stat == 0) {
                 _VertBufferRW[P_ID].rust +=
-                    FlowRust(_EdgeBufferRW[tmp_e].vert, P_ID, tmp_e, projected_grav) *
-                    _VertBufferRW[_EdgeBufferRW[tmp_e].vert].rust_buf;
+                    FlowRust(_EdgeBufferRW[tmp_e].vert, P_ID, tmp_e, projected_grav);
 
                 tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].prev;
 
             }
             // 時計回り処理: 断裂したtmp_e
             _VertBufferRW[P_ID].rust +=
-                FlowRust(_EdgeBufferRW[tmp_e].vert, P_ID, tmp_e, projected_grav) *
-                _VertBufferRW[_EdgeBufferRW[tmp_e].vert].rust_buf;
+                FlowRust(_EdgeBufferRW[tmp_e].vert, P_ID, tmp_e, projected_grav);
             break;
         }
         // 反時計回り処理: 断裂したtmp_e 
@@ -862,7 +892,7 @@ void PropagateRust
     } while (tmp_e != home_e);
     // 逆再生時は無条件で少し減る
     if (_delta_time * _VertBufferRW[P_ID].localSpeed < 0)
-        _VertBufferRW[P_ID].rust += _delta_time * _VertBufferRW[P_ID].localSpeed * 0.004;
+        _VertBufferRW[P_ID].rust += _delta_time * _VertBufferRW[P_ID].localSpeed * 0.00;
 
     if (_VertBufferRW[P_ID].rust > 1.0) _VertBufferRW[P_ID].rust = 1.0;
     if (_VertBufferRW[P_ID].rust < 0) _VertBufferRW[P_ID].rust = 0;
@@ -1197,7 +1227,8 @@ void SetVertColor_Normal
     if (_VertBufferRW[P_ID].stat == 32) { 
         return;
     }
-    float r = min(max(_VertBufferRW[P_ID].rust / 1.0, 0), 1);
+    float r = min(max(_VertBufferRW[P_ID].rust, 0), 1);
+    //float r = min(max(1.0 - exp(-_VertBufferRW[P_ID].rust), 0), 1);
     float g = min(max(1.0 - exp(-_VertBufferRW[P_ID].dust), 0), 1);
     float b = min(max(1.0 - exp(-_VertBufferRW[P_ID].chalk), 0), 1);
     _VertBufferRW[P_ID].col = float4(r, g, b, 1);
@@ -1217,6 +1248,7 @@ void SetVertColor_Separate
     if (_VertBufferRW[P_ID].stat == 32) return;
 
     float val = (max(_VertBufferRW[P_ID].bond, 0) - _VertBufferRW[P_ID].liftingForce);
+    //float val = (160 - _VertBufferRW[P_ID].liftingForce);
     val = min(max(val / 100, 0), 1);
     float r = 0;
     float g = 0;
@@ -1537,7 +1569,7 @@ void UpdateLiftingForce
 
     Edge hei = _EdgeBufferRW[P_ID];
     
-    _EdgeBufferRW[P_ID].liftingForce = 1.0 * lifting_force_ratio * max(_FaceBufferRW[hei.face].contraction, 0) / (1 + exp(- 4 * hei.angle));
+    _EdgeBufferRW[P_ID].liftingForce = lifting_force_ratio * max(_FaceBufferRW[hei.face].contraction, 0) / (1 + exp(- 2 * hei.angle));
     
     // Edgeの探索からVert.liftingForceにアクセスするにはAtomic演算が必要になるので
     // UpdateVertForcesからVertの周りをぐるっと探索する方式に変更した
@@ -1631,6 +1663,18 @@ void UpdateVertForces
     //    _VertBufferRW[P_ID].col = float4(0, 0, 1 - v * 2, 1);
     //else
     //    _VertBufferRW[P_ID].col = float4((v - 0.5) * 2, 0, 0, 1);
+}
+#pragma kernel SetContractionBuffer
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void SetContractionBuffer
+(
+    uint3 DTid : SV_DispatchThreadID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _FaceNum) return;
+
+    _FaceBufferRW[P_ID].tension = _FaceBufferRW[P_ID].contraction;
 }
 #pragma kernel UpdateBindingForce
 [numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
@@ -1741,7 +1785,28 @@ void UpdateBindingForce
             }
         }
     }
+
+    // 張力分散
+    /*
+    uint faces_count = 0;
+    uint sum_contraction = 0;
+    if (_EdgeBufferRW[_FaceBufferRW[P_ID].edge].stat == 0) {
+        faces_count++;
+        sum_contraction += _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[_FaceBufferRW[P_ID].edge].pair].face].tension;
+    }
+    if (_EdgeBufferRW[_EdgeBufferRW[_FaceBufferRW[P_ID].edge].next].stat == 0) {
+        faces_count++;
+        sum_contraction += _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[_EdgeBufferRW[_FaceBufferRW[P_ID].edge].next].pair].face].tension;
+    }
+    if (_EdgeBufferRW[_EdgeBufferRW[_FaceBufferRW[P_ID].edge].prev].stat == 0) {
+        faces_count++;
+        sum_contraction += _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[_EdgeBufferRW[_FaceBufferRW[P_ID].edge].prev].pair].face].tension;
+    }
+    if (faces_count > 0)
+        _FaceBufferRW[P_ID].contraction += (sum_contraction / faces_count - _FaceBufferRW[P_ID].tension) * _delta_time * f_speed;
+    */
     _FaceBufferRW[P_ID].contraction += 0.5 * _delta_time * f_speed;
+    
     //if (_FaceBufferRW[P_ID].contraction < 0) _FaceBufferRW[P_ID].contraction = 0;
 
     _LengthConstraintBufferRW[ei].offset = _LengthConstraintBufferRW[ei].offset0 * (1.0 - _FaceBufferRW[_EdgeBufferRW[P_ID].face].contraction * 0.0001); //- _FaceBufferRW[P_ID].contraction / k2; //

@@ -166,6 +166,7 @@ namespace Weathering_GPU
         int SetVertForces;
         int UpdateLiftingForce;
         int UpdateVertForces;
+        int SetContractionBuffer;
         int UpdateBindingForce;
 
         int SeparateVertex;
@@ -245,6 +246,7 @@ namespace Weathering_GPU
             SetVertColor_Speed = CS.FindKernel("SetVertColor_Speed");
             UpdateLiftingForce = CS.FindKernel("UpdateLiftingForce");
             UpdateVertForces = CS.FindKernel("UpdateVertForces");
+            SetContractionBuffer = CS.FindKernel("SetContractionBuffer");
             UpdateBindingForce = CS.FindKernel("UpdateBindingForce");
             SeparateVertex = CS.FindKernel("SeparateVertex");
             TearEdge = CS.FindKernel("TearEdge");
@@ -430,6 +432,9 @@ namespace Weathering_GPU
             CS.SetBuffer(UpdateVertForces, "_EdgeBufferRW", _edgeBuffer);
             CS.SetBuffer(UpdateVertForces, "_LiftingForceAsInt", _liftingForceAsInt);
             CS.SetBuffer(UpdateVertForces, "_LiftingForceCount", _liftingForceCount);
+
+            // SetContractionBuffer;
+            CS.SetBuffer(SetContractionBuffer, "_FaceBufferRW", _faceBuffer);
 
             // UpdateBindingForce
             CS.SetBuffer(UpdateBindingForce, "_VertBufferRW", _vertBuffer);
@@ -819,6 +824,7 @@ namespace Weathering_GPU
                 CS.Dispatch(SetVertForces, vertGS, 1, 1);
                 CS.Dispatch(UpdateLiftingForce, edgeGS, 1, 1);
                 CS.Dispatch(UpdateVertForces, vertGS, 1, 1);
+                CS.Dispatch(SetContractionBuffer, faceGS, 1, 1);
                 CS.Dispatch(UpdateBindingForce, faceGS, 1, 1);
             }
 

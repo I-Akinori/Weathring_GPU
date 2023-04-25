@@ -444,6 +444,7 @@ MonoBehaviour:
   active_PBD: 1
   active_Fracture: 1
   active_Stains: 1
+  active_UV: 1
   active_Debug: 1
   mainMat: {fileID: 2100000, guid: 793f77cb6412338418c2ec8e51b7111a, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
@@ -778,6 +779,7 @@ MonoBehaviour:
   active_PBD: 1
   active_Fracture: 1
   active_Stains: 1
+  active_UV: 1
   active_Debug: 1
   mainMat: {fileID: 2100000, guid: 57653e2bdcea56c4fabeed7340a446f8, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
@@ -913,6 +915,7 @@ MonoBehaviour:
   active_PBD: 1
   active_Fracture: 1
   active_Stains: 1
+  active_UV: 1
   active_Debug: 1
   mainMat: {fileID: 2100000, guid: 57653e2bdcea56c4fabeed7340a446f8, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
@@ -1170,6 +1173,7 @@ MonoBehaviour:
   active_PBD: 1
   active_Fracture: 1
   active_Stains: 1
+  active_UV: 1
   active_Debug: 1
   mainMat: {fileID: 2100000, guid: 793f77cb6412338418c2ec8e51b7111a, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
@@ -1293,8 +1297,9 @@ MonoBehaviour:
   active_PBD: 1
   active_Fracture: 1
   active_Stains: 1
+  active_UV: 1
   active_Debug: 1
-  mainMat: {fileID: 2100000, guid: cef8c9fe982e2b94cbe8bf8795b64510, type: 2}
+  mainMat: {fileID: 2100000, guid: 793f77cb6412338418c2ec8e51b7111a, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
   baseMat: {fileID: 2100000, guid: a249ab92b5c423d4e94e43bc44a2839f, type: 2}
   intensity: 1
@@ -1321,7 +1326,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: cef8c9fe982e2b94cbe8bf8795b64510, type: 2}
+  - {fileID: 2100000, guid: 793f77cb6412338418c2ec8e51b7111a, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -1917,6 +1922,7 @@ MonoBehaviour:
   active_PBD: 1
   active_Fracture: 0
   active_Stains: 1
+  active_UV: 1
   active_Debug: 1
   mainMat: {fileID: 2100000, guid: 793f77cb6412338418c2ec8e51b7111a, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
@@ -2291,14 +2297,14 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 946378845}
-  m_LocalRotation: {x: 0.13052616, y: 0, z: 0, w: 0.9914449}
-  m_LocalPosition: {x: 0, y: 2.5, z: -14}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: -1, z: -14}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
   m_RootOrder: 3
-  m_LocalEulerAnglesHint: {x: 15, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &946378849
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3092,6 +3098,7 @@ MonoBehaviour:
   active_PBD: 1
   active_Fracture: 1
   active_Stains: 1
+  active_UV: 1
   active_Debug: 1
   mainMat: {fileID: 2100000, guid: 57653e2bdcea56c4fabeed7340a446f8, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
@@ -4715,6 +4722,7 @@ MonoBehaviour:
   active_PBD: 1
   active_Fracture: 1
   active_Stains: 1
+  active_UV: 1
   active_Debug: 1
   mainMat: {fileID: 2100000, guid: 793f77cb6412338418c2ec8e51b7111a, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
