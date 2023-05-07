@@ -30,6 +30,7 @@ StructuredBuffer<float3> _PositionBuffer;
 StructuredBuffer<float3> _NormalBuffer;
 RWStructuredBuffer<float3> _BasePositionBuffer;
 RWStructuredBuffer<float3> _BaseNormalBuffer;
+RWStructuredBuffer<float2> _BaseUVBuffer;
 StructuredBuffer<float2> _UVBuffer;
 RWStructuredBuffer<Vert> _VertBufferRW;
 RWStructuredBuffer<Edge> _EdgeBufferRW;
@@ -589,7 +590,7 @@ void InitVert
     _VertBufferRW[P_ID].localSpeed = 1;
 
     _VertBufferRW[P_ID].uv = _UVBuffer[P_ID];
-    _VertBufferRW[P_ID].uv.x = 0;// (-_VertBufferRW[P_ID].pos0.x * 0.3 + 0.6);
+    _VertBufferRW[P_ID].uv.x = (-_VertBufferRW[P_ID].pos0.x * 0.3 + 0.6);
     _VertBufferRW[P_ID].uv.y = _VertBufferRW[P_ID].pos0.y * 0.3 + 0.5;
     //_VertBufferRW[P_ID].edge = -1;
 
@@ -602,6 +603,21 @@ void InitVert
         //_VertBufferRW[P_ID].frc += float3(0, _VertBufferRW[P_ID].pos0.y - 4, 0) * 0.01;
         //_VertBufferRW[P_ID].w = 1.0;
     }
+}
+#pragma kernel SetBase
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void SetBase
+(
+    uint3 DTid : SV_DispatchThreadID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _VertNum) return;
+
+    _BaseUVBuffer[P_ID].x = (-_BasePositionBuffer[P_ID].x * 0.3 + 0.6);
+    _BaseUVBuffer[P_ID].y = _BasePositionBuffer[P_ID].y * 0.3 + 0.5;
+
+    _BasePositionBuffer[P_ID] -= _BaseNormalBuffer[P_ID] * 0.01;
 }
 
 #pragma kernel InitEdge
@@ -626,9 +642,10 @@ void InitEdge
         float3 mid_p = _VertBufferRW[_EdgeBufferRW[P_ID * 3 + j].vert].pos;
         mid_p += _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[P_ID * 3 + j].next].vert].pos;
         mid_p *= 0.5;
+        mid_p += float3(100, 100, 100);
 
         float rand = frac(sin(dot(mid_p, float3(12.9898, 78.233, 43.622))) * 43758.5453);
-        _EdgeBufferRW[P_ID * 3 + j].bindingForce = (OctavePerlin(mid_p, 5, 0.5) * 500 + 500) * (rand < 0.001 ? 0.01 : 1.0);
+        _EdgeBufferRW[P_ID * 3 + j].bindingForce = (OctavePerlin(mid_p, 5, 0.5) * 500 + 500)* (rand < 0.001 ? 0.01 : 1.0);
     }
 }
 
@@ -673,18 +690,7 @@ void SetPair
     if (_EdgeBufferRW[P_ID].stat == 1)
         _VertBufferRW[_EdgeBufferRW[P_ID].vert].onEdge = 1;
 }
-#pragma kernel SetBase
-[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
-void SetBase
-(
-    uint3 DTid : SV_DispatchThreadID
-)
-{
-    const unsigned int P_ID = DTid.x;
-    if (P_ID >= _VertNum) return;
 
-    _BasePositionBuffer[P_ID] -= _BaseNormalBuffer[P_ID] * 0.01;
-}
 #pragma kernel ComputeVertCurvature
 [numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
 void ComputeVertCurvature
@@ -806,7 +812,7 @@ void ProceedChalking
     if (P_ID >= _VertNum) return;
     if (_VertBufferRW[P_ID].stat == 32) return;
 
-    float w = 0.005 * 0;
+    float w = 0.001 * 1;
 
     _VertBufferRW[P_ID].chalk += w * _delta_time * _VertBufferRW[P_ID].localSpeed;
     if (_VertBufferRW[P_ID].chalk < 0) _VertBufferRW[P_ID].chalk = 0;
@@ -1157,7 +1163,8 @@ void SearchVertices
     uint count = 0;
     float sum = 0;
 
-    float val = - _VertBufferRW[P_ID].pos0.x / 1.0 + 0.4;
+    //float val = - _VertBufferRW[P_ID].pos0.x / 1.0 + 0.4;
+    float val = _VertBufferRW[P_ID].pos0.x / 0.8 - 0.1;
     val = min(max(val, -1), 1);
     _VertBufferRW[P_ID].localSpeed = val;
     /*
@@ -1303,9 +1310,10 @@ void SetVertColor_Tear
                 // 時計回り: tmp_eは頂点に向かう方向
                 // 時計回り処理: すべてのtmp_e
                 tmp_e = _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].prev;
-                val += _EdgeBufferRW[tmp_e].bindingForce - _FaceBufferRW[_EdgeBufferRW[tmp_e].face].tension;
+                val += _EdgeBufferRW[tmp_e].bindingForce
+                     -_FaceBufferRW[_EdgeBufferRW[tmp_e].face].tension;
                 val += _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].bindingForce
-                        - _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].face].tension;
+                       -_FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].face].tension;
                 if (_VertBufferRW[_EdgeBufferRW[tmp_e].vert].stat == 2) {
                     float3 ed = _VertBufferRW[P_ID].pos - _VertBufferRW[_EdgeBufferRW[tmp_e].vert].pos;
                     float rad = length(ed);
@@ -1323,7 +1331,7 @@ void SetVertColor_Tear
                     sy /= sqrt(rad);
                     sxy /= sqrt(rad);
                     float s = sy * cos * cos + sx * sin * sin - 2 * sxy * cos * sin;
-                    val -= s * 200;
+                    val -= s * _intensity * (_FaceBufferRW[_EdgeBufferRW[tmp_e].face].tension + _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].face].tension);
                 }
                 count++;
             }
@@ -1331,9 +1339,10 @@ void SetVertColor_Tear
             break;
         }
         // 反時計回り処理: ペアが存在しているtmp_e 
-        val += _EdgeBufferRW[tmp_e].bindingForce - _FaceBufferRW[_EdgeBufferRW[tmp_e].face].tension;
+        val += _EdgeBufferRW[tmp_e].bindingForce
+            -_FaceBufferRW[_EdgeBufferRW[tmp_e].face].tension;
         val += _EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].bindingForce
-                - _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].face].tension;
+                -_FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].face].tension;
 
         if (_VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].vert].stat == 2) {
             float3 ed = _VertBufferRW[P_ID].pos - _VertBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].vert].pos;
@@ -1352,7 +1361,7 @@ void SetVertColor_Tear
             sy /= sqrt(rad);
             sxy /= sqrt(rad);
             float s = sy * cos * cos + sx * sin * sin - 2 * sxy * cos * sin;
-            val -= s * 200;
+            val -= s * _intensity * (_FaceBufferRW[_EdgeBufferRW[tmp_e].face].tension + _FaceBufferRW[_EdgeBufferRW[_EdgeBufferRW[tmp_e].pair].face].tension);
         }
         count++;
 
@@ -1383,7 +1392,7 @@ void SetVertColor_Tear
     }
     _VertBufferRW[P_ID].col = float4(r, g, b, 1);
 
-    //return;
+    return;
     // デバッグ用のカラー設定
     if (_VertBufferRW[P_ID].stat == 0) {
         r = 1;
@@ -1431,6 +1440,22 @@ void SetVertColor_Tear
     }
 
     _VertBufferRW[P_ID].col = float4(r, g, b, 1);
+}
+#pragma kernel SetVertColor_Stain
+[numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
+void SetVertColor_Stain
+(
+    uint3 DTid : SV_DispatchThreadID // スレッド全体で固有のID
+)
+{
+    const unsigned int P_ID = DTid.x;
+    if (P_ID >= _VertNum) return;
+    if (_VertBufferRW[P_ID].stat == 32) return;
+
+    Vert v = _VertBufferRW[P_ID];
+    
+    _VertBufferRW[P_ID].col = float4(min(max(v.rust, 0), 1), min(max(v.chalk, 0), 1), min(max(v.dust, 0), 1), 1);
+    //_VertBufferRW[P_ID].col = float4(1 - min(max(v.chalk, 0), 1), 1 - min(max(v.rust, 0), 1), 1 - min(max(v.dust, 0), 1), 1);
 }
 #pragma kernel SetVertColor_Speed
 [numthreads(SIMULATION_BLOCK_SIZE, 1, 1)]
@@ -1569,7 +1594,7 @@ void UpdateLiftingForce
 
     Edge hei = _EdgeBufferRW[P_ID];
     
-    _EdgeBufferRW[P_ID].liftingForce = lifting_force_ratio * max(_FaceBufferRW[hei.face].contraction, 0) / (1 + exp(- 2 * hei.angle));
+    _EdgeBufferRW[P_ID].liftingForce = lifting_force_ratio * max(_FaceBufferRW[hei.face].contraction, 0) / (1 + exp(- 4 * hei.angle));
     
     // Edgeの探索からVert.liftingForceにアクセスするにはAtomic演算が必要になるので
     // UpdateVertForcesからVertの周りをぐるっと探索する方式に変更した
@@ -1740,9 +1765,9 @@ void UpdateBindingForce
             ReconnectEdges(en);
     }
     
-    if (_EdgeBufferRW[ei].stat == 0) {
-        if (_EdgeBufferRW[ep].stat == 0) {
-            if (_EdgeBufferRW[en].stat == 0) {
+    if (_EdgeBufferRW[ei].stat == 0 || _EdgeBufferRW[ei].stat == 1) {
+        if (_EdgeBufferRW[ep].stat == 0 || _EdgeBufferRW[ep].stat == 1) {
+            if (_EdgeBufferRW[en].stat == 0 || _EdgeBufferRW[en].stat == 1) {
                 // 3
             }
             else {
@@ -1752,7 +1777,7 @@ void UpdateBindingForce
             }
         }
         else {
-            if (_EdgeBufferRW[en].stat == 0) {
+            if (_EdgeBufferRW[en].stat == 0 || _EdgeBufferRW[en].stat == 1) {
                 // 2 (i & next)
                 _EdgeBufferRW[ei].bindingForce += -damage2 * in_speed;
                 _EdgeBufferRW[en].bindingForce += -damage2 * np_speed;
@@ -1764,7 +1789,7 @@ void UpdateBindingForce
         }
     }
     else {
-        if (_EdgeBufferRW[ep].stat == 0) {
+        if (_EdgeBufferRW[ep].stat == 0 || _EdgeBufferRW[ep].stat == 1) {
             if (_EdgeBufferRW[en].stat == 0) {
                 // 2 (prev & next)
                 _EdgeBufferRW[ep].bindingForce += -damage2 * pi_speed;
@@ -1776,7 +1801,7 @@ void UpdateBindingForce
             }
         }
         else {
-            if (_EdgeBufferRW[en].stat == 0) {
+            if (_EdgeBufferRW[en].stat == 0 || _EdgeBufferRW[en].stat == 1) {
                 // 1 (next)
                 _EdgeBufferRW[en].bindingForce += -damage * np_speed;
             }
@@ -2598,9 +2623,9 @@ void TearEdge
             crack = false;
         }
         if (crack && (_VertBufferRW[ei.vert].stat == 2 
-            || (ei.stat == 3 && ( length(_VertBufferRW[ei.vert].pos - _VertBufferRW[_EdgeBufferRW[ep.next].vert].pos) < maxDistance
-                                    || length(_VertBufferRW[ep.vert].pos - _VertBufferRW[_EdgeBufferRW[ei.next].vert].pos) < maxDistance
-                                ) 
+            || (ei.stat == 3 //&& ( length(_VertBufferRW[ei.vert].pos - _VertBufferRW[_EdgeBufferRW[ep.next].vert].pos) < maxDistance
+                             //       || length(_VertBufferRW[ep.vert].pos - _VertBufferRW[_EdgeBufferRW[ei.next].vert].pos) < maxDistance
+                             //   ) 
                 )
             )
         ) {
@@ -2626,9 +2651,9 @@ void TearEdge
                 crack = false;
         }
         if (crack && (_VertBufferRW[ep.vert].stat == 2 
-            || (ei.stat == 3 && (length(_VertBufferRW[ep.vert].pos - _VertBufferRW[_EdgeBufferRW[ei.next].vert].pos) < maxDistance
-                                    || length(_VertBufferRW[ei.vert].pos - _VertBufferRW[_EdgeBufferRW[ep.next].vert].pos) < maxDistance
-                                )
+            || (ei.stat == 3 //&& (length(_VertBufferRW[ep.vert].pos - _VertBufferRW[_EdgeBufferRW[ei.next].vert].pos) < maxDistance
+                             //       || length(_VertBufferRW[ei.vert].pos - _VertBufferRW[_EdgeBufferRW[ep.next].vert].pos) < maxDistance
+                             //   )
                 )
             )
         ) 
@@ -2671,7 +2696,7 @@ void AdhereVert
     if (P_ID >= _VertNum) return;
     if (_VertBufferRW[P_ID].stat == 32) return;
 
-    float w = 0.005 * 0;
+    float w = 0.005 * 1;
 
     _VertBufferRW[P_ID].chalk += w * _delta_time * _VertBufferRW[P_ID].localSpeed;
 

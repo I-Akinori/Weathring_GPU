@@ -28,6 +28,10 @@ namespace Weathering_GPU
             {
                 vis_mode = 3;
             }
+            else if (dropdown.value == 4)
+            {
+                vis_mode = 4;
+            }
         }
     }
 }

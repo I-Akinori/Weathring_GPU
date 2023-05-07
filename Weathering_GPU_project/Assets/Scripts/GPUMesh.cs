@@ -17,6 +17,8 @@ namespace Weathering_GPU
         [SerializeField] private bool active_Stains = true;
         [SerializeField] private bool active_UV = true;
         [SerializeField] private bool active_Debug = true;
+        [SerializeField] private bool active_screenshot = true;
+        [SerializeField] private string data_name = "";
         [SerializeField] private Material mainMat;
         [SerializeField] private Material subMat;
         [SerializeField] private Material baseMat;
@@ -161,6 +163,7 @@ namespace Weathering_GPU
         int SetVertColor_Normal;
         int SetVertColor_Separate;
         int SetVertColor_Tear;
+        int SetVertColor_Stain;
         int SetVertColor_Speed;
 
         int SetVertForces;
@@ -179,6 +182,7 @@ namespace Weathering_GPU
         GraphicsBuffer _normalBuffer;
         GraphicsBuffer _basePositionBuffer;      // ��p
         GraphicsBuffer _baseNormalBuffer;
+        GraphicsBuffer _baseUVBuffer;
         GraphicsBuffer _uvBuffer;
         GraphicsBuffer _lengthConstraintBuffer;      // PBD�p
         GraphicsBuffer _bendConstraintBuffer;
@@ -243,6 +247,7 @@ namespace Weathering_GPU
             SetVertColor_Normal = CS.FindKernel("SetVertColor_Normal");
             SetVertColor_Separate = CS.FindKernel("SetVertColor_Separate");
             SetVertColor_Tear = CS.FindKernel("SetVertColor_Tear");
+            SetVertColor_Stain = CS.FindKernel("SetVertColor_Stain");
             SetVertColor_Speed = CS.FindKernel("SetVertColor_Speed");
             UpdateLiftingForce = CS.FindKernel("UpdateLiftingForce");
             UpdateVertForces = CS.FindKernel("UpdateVertForces");
@@ -273,6 +278,7 @@ namespace Weathering_GPU
 
             _basePositionBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, vertNum, Marshal.SizeOf(typeof(Vector3)));
             _baseNormalBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, vertNum, Marshal.SizeOf(typeof(Vector3)));
+            _baseUVBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, vertNum, Marshal.SizeOf(typeof(Vector2)));
 
             CS.SetBuffer(InitVert, "_PositionBuffer", _positionBuffer);
             CS.SetBuffer(InitVert, "_NormalBuffer", _normalBuffer);
@@ -338,6 +344,7 @@ namespace Weathering_GPU
             // SetBase
             CS.SetBuffer(SetBase, "_BasePositionBuffer", _basePositionBuffer);
             CS.SetBuffer(SetBase, "_BaseNormalBuffer", _baseNormalBuffer);
+            CS.SetBuffer(SetBase, "_BaseUVBuffer", _baseUVBuffer);
 
             // SetPair
             CS.SetBuffer(SetPair, "_VertBufferRW", _vertBuffer);
@@ -357,6 +364,7 @@ namespace Weathering_GPU
             CS.SetBuffer(SetVertColor_Tear, "_VertBufferRW", _vertBuffer);
             CS.SetBuffer(SetVertColor_Tear, "_EdgeBufferRW", _edgeBuffer);
             CS.SetBuffer(SetVertColor_Tear, "_FaceBufferRW", _faceBuffer);
+            CS.SetBuffer(SetVertColor_Stain, "_VertBufferRW", _vertBuffer);
             CS.SetBuffer(SetVertColor_Speed, "_VertBufferRW", _vertBuffer);
 
             // ComputeVertCurvature
@@ -605,6 +613,10 @@ namespace Weathering_GPU
                     rend.material = subMat;
                     CS.Dispatch(SetVertColor_Tear, vertGS, 1, 1);
                     break;
+                case 3:
+                    rend.material = subMat;
+                    CS.Dispatch(SetVertColor_Stain, vertGS, 1, 1);
+                    break;
                 default:
                     rend.material = subMat;
                     CS.Dispatch(SetVertColor_Speed, vertGS, 1, 1);
@@ -717,6 +729,11 @@ namespace Weathering_GPU
                 _baseNormalBuffer.Release();
                 _baseNormalBuffer = null;
             }
+            if (_baseUVBuffer != null)
+            {
+                _baseUVBuffer.Release();
+                _baseUVBuffer = null;
+            }
             if (_blankIndexBuffer != null)
             {
                 _blankIndexBuffer.Release();
@@ -746,6 +763,11 @@ namespace Weathering_GPU
             var vertices = new Vector3[baseFilter.mesh.vertexCount];
             _basePositionBuffer.GetData(vertices);
             baseFilter.mesh.vertices = vertices;
+            var uv = new Vector2[baseFilter.mesh.vertexCount];
+            _baseUVBuffer.GetData(uv);
+            baseFilter.mesh.uv = uv;
+            UnityEngine.Debug.Log(baseFilter.mesh.uv[100] + "/" + baseFilter.mesh.vertices[100]);
+            UnityEngine.Debug.Log(baseFilter.mesh.uv[101] + "/" + baseFilter.mesh.vertices[101]);
         }
         // Start is called before the first frame update
         void Start()
@@ -781,7 +803,7 @@ namespace Weathering_GPU
             SetConstraint();
             SetBaseMesh();
 
-            CS.SetVector("_gravity", new Vector4(0, -1, 0, 0));
+            CS.SetVector("_gravity", Quaternion.Inverse(this.transform.localRotation) * new Vector4(0, -1, 0, 0));
 
             locked_verts = new List<int>();     // �f�o�b�O�p
         }
@@ -840,7 +862,7 @@ namespace Weathering_GPU
             }
 
             // 頂点単位の探索 (ティザー用スピード切り替え)
-            if (Input.GetKeyDown(KeyCode.Space))
+            if (Input.GetKeyDown(KeyCode.Tab))
                 CS.Dispatch(SearchVertices, vertGS, 1, 1); // ComputeShaderを実行
 
             // GPU���ŕύX���ꂽ���_���̔��f
@@ -862,8 +884,8 @@ namespace Weathering_GPU
             //UnityEngine.Debug.Log(vertexArr[100].Col);
 
             filt.mesh.SetVertexBufferParams(vertNum, layout);
-            filt.mesh.SetVertexBufferData(vertexArr, 0, 0, vertNum);
-
+            filt.mesh.SetVertexBufferData(_vertexBuffer, 0, 0, vertNum);
+            
             /*
             var posArr = new Vector3[vertNum];
             var norArr = new Vector3[vertNum];
@@ -895,6 +917,20 @@ namespace Weathering_GPU
             //filt.mesh.RecalculateNormals();
             filt.mesh.RecalculateBounds();
 
+            // Screen Shot
+            count++;
+            //count = 1;
+            if (active_screenshot && Input.GetKeyDown(KeyCode.Space) || count % 50 == 1)
+            {
+                string path = "C:/Users/rhaar/Documents/weathering_file/TextData_" + data_name + ".txt";
+                bool isAppend = true;
+                
+                if (VisMode.vis_mode > 0)
+                    ScreenCapture.CaptureScreenshot("C:/Users/rhaar/Documents/weathering_file_GPU/ScreenShot_vis" + VisMode.vis_mode + "_" + data_name + (count - 1) + ".png");
+                else
+                    ScreenCapture.CaptureScreenshot("C:/Users/rhaar/Documents/weathering_file_GPU/ScreenShot_" + data_name + (count - 1) + ".png");
+            }
+
             // Debug
             if (active_Debug)
             {
@@ -908,7 +944,6 @@ namespace Weathering_GPU
                 _lockProcessBuffer.GetData(lockArr);
                 //UnityEngine.Debug.Log(filt.mesh.normals[norArr.Length - 1]);
 
-                int count = 0;
                 
                 for (int i = 0; i < vertArr.Length; i++)
                 {
@@ -916,7 +951,6 @@ namespace Weathering_GPU
                     {
                         //if (i < 10365)
                         //    UnityEngine.Debug.Log("lacked origin: " + i);
-                        count++;
                         continue;
                         //UnityEngine.Debug.Log("32: " + i);
                         //UnityEngine.Debug.DrawLine(vertArr[i].Pos, vertArr[i].Pos + vertArr[i].Nor * 0.1f, Color.magenta);
@@ -970,6 +1004,7 @@ namespace Weathering_GPU
                 }
                 var blankArr = new uint[countArr[1]];
                 _blankIndexBuffer.GetData(blankArr);
+                int tore_count = 0;
                 for (int i = 0; i < edgeArr.Length; i++)
                 {
                     if (vertArr[edgeArr[i].Vert].Status == 32)
@@ -989,9 +1024,16 @@ namespace Weathering_GPU
                     }
                     else if (edgeArr[i].Stat > 1)
                     {
-                        UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[edgeArr[i].Vert].Pos), transform.TransformPoint(vertArr[edgeArr[edgeArr[i].Next].Vert].Pos), Color.red);
+                        tore_count++;
+                        //UnityEngine.Debug.DrawLine(transform.TransformPoint(vertArr[edgeArr[i].Vert].Pos), transform.TransformPoint(vertArr[edgeArr[edgeArr[i].Next].Vert].Pos), Color.red);
                     }
                 }
+                if (tore_count > edgeArr.Length * 0.15 && active_screenshot) {
+                    //active_screenshot = false;
+                    UnityEngine.Debug.Log("Tore");
+                    //ScreenCapture.CaptureScreenshot("C:/Users/rhaar/Documents/weathering_file_GPU/ScreenShot_tore_" + data_name + (count - 1) + ".png");
+                }
+
                 int lock_counter = 0;
                 for (int i = 0; i < lockArr.Length; i++)
                 {

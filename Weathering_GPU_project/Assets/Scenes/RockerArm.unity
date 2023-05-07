@@ -441,6 +441,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b5944e247ba84864bbe1da2495aac9f8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  active_PBD: 1
+  active_Fracture: 1
+  active_Stains: 1
+  active_UV: 1
+  active_Debug: 1
+  active_screenshot: 1
+  data_name: 
   mainMat: {fileID: 2100000, guid: 793f77cb6412338418c2ec8e51b7111a, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
   baseMat: {fileID: 2100000, guid: 4a44196c05d512f41a64d22626a5da65, type: 2}
@@ -771,10 +778,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b5944e247ba84864bbe1da2495aac9f8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  mainMat: {fileID: 2100000, guid: 57653e2bdcea56c4fabeed7340a446f8, type: 2}
+  active_PBD: 1
+  active_Fracture: 1
+  active_Stains: 1
+  active_UV: 1
+  active_Debug: 0
+  active_screenshot: 0
+  data_name: 
+  mainMat: {fileID: 2100000, guid: 793f77cb6412338418c2ec8e51b7111a, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
   baseMat: {fileID: 2100000, guid: 4a44196c05d512f41a64d22626a5da65, type: 2}
-  intensity: 1
+  intensity: 0.125
   history: 0.5
   curl: 0.4
   CS: {fileID: 7200000, guid: c199bc15ed28da441a805200ac94d548, type: 3}
@@ -902,6 +916,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b5944e247ba84864bbe1da2495aac9f8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  active_PBD: 1
+  active_Fracture: 1
+  active_Stains: 1
+  active_UV: 1
+  active_Debug: 1
+  active_screenshot: 1
+  data_name: 
   mainMat: {fileID: 2100000, guid: 57653e2bdcea56c4fabeed7340a446f8, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
   baseMat: {fileID: 2100000, guid: 4a44196c05d512f41a64d22626a5da65, type: 2}
@@ -940,11 +961,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b5944e247ba84864bbe1da2495aac9f8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  active_PBD: 1
+  active_Fracture: 1
+  active_Stains: 1
+  active_UV: 1
+  active_Debug: 1
+  active_screenshot: 1
+  data_name: 
   mainMat: {fileID: 2100000, guid: 793f77cb6412338418c2ec8e51b7111a, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
   baseMat: {fileID: 2100000, guid: 4a44196c05d512f41a64d22626a5da65, type: 2}
-  intensity: 0
-  history: 0
+  intensity: 1
+  history: 0.5
   curl: 0.4
   CS: {fileID: 7200000, guid: c199bc15ed28da441a805200ac94d548, type: 3}
 --- !u!23 &441358528
@@ -1004,14 +1032,14 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 441358526}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalRotation: {x: 0, y: 0.17364816, z: 0, w: 0.9848078}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalScale: {x: 1.2, y: 1.2, z: 1.2}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
   m_RootOrder: 15
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 20, z: 0}
 --- !u!1 &442631019
 GameObject:
   m_ObjectHideFlags: 0
@@ -1258,6 +1286,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b5944e247ba84864bbe1da2495aac9f8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  active_PBD: 1
+  active_Fracture: 1
+  active_Stains: 1
+  active_UV: 1
+  active_Debug: 1
+  active_screenshot: 1
+  data_name: 
   mainMat: {fileID: 2100000, guid: 793f77cb6412338418c2ec8e51b7111a, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
   baseMat: {fileID: 2100000, guid: 4a44196c05d512f41a64d22626a5da65, type: 2}
@@ -1377,6 +1412,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b5944e247ba84864bbe1da2495aac9f8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  active_PBD: 1
+  active_Fracture: 1
+  active_Stains: 1
+  active_UV: 1
+  active_Debug: 1
+  active_screenshot: 1
+  data_name: 
   mainMat: {fileID: 2100000, guid: cef8c9fe982e2b94cbe8bf8795b64510, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
   baseMat: {fileID: 2100000, guid: a249ab92b5c423d4e94e43bc44a2839f, type: 2}
@@ -3065,6 +3107,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b5944e247ba84864bbe1da2495aac9f8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  active_PBD: 1
+  active_Fracture: 1
+  active_Stains: 1
+  active_UV: 1
+  active_Debug: 1
+  active_screenshot: 1
+  data_name: 
   mainMat: {fileID: 2100000, guid: 57653e2bdcea56c4fabeed7340a446f8, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
   baseMat: {fileID: 2100000, guid: 4a44196c05d512f41a64d22626a5da65, type: 2}
@@ -3692,6 +3741,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b5944e247ba84864bbe1da2495aac9f8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  active_PBD: 1
+  active_Fracture: 1
+  active_Stains: 1
+  active_UV: 1
+  active_Debug: 1
+  active_screenshot: 1
+  data_name: 
   mainMat: {fileID: 2100000, guid: 793f77cb6412338418c2ec8e51b7111a, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
   baseMat: {fileID: 2100000, guid: 4a44196c05d512f41a64d22626a5da65, type: 2}
@@ -3875,6 +3931,8 @@ MonoBehaviour:
     - m_Text: Separate
       m_Image: {fileID: 0}
     - m_Text: Tear
+      m_Image: {fileID: 0}
+    - m_Text: Stain
       m_Image: {fileID: 0}
     - m_Text: Speed
       m_Image: {fileID: 0}
@@ -4501,6 +4559,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b5944e247ba84864bbe1da2495aac9f8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  active_PBD: 1
+  active_Fracture: 1
+  active_Stains: 1
+  active_UV: 1
+  active_Debug: 1
+  active_screenshot: 1
+  data_name: 
   mainMat: {fileID: 2100000, guid: 793f77cb6412338418c2ec8e51b7111a, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
   baseMat: {fileID: 2100000, guid: 4a44196c05d512f41a64d22626a5da65, type: 2}
@@ -4890,6 +4955,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b5944e247ba84864bbe1da2495aac9f8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  active_PBD: 1
+  active_Fracture: 1
+  active_Stains: 1
+  active_UV: 1
+  active_Debug: 1
+  active_screenshot: 1
+  data_name: 
   mainMat: {fileID: 2100000, guid: 793f77cb6412338418c2ec8e51b7111a, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
   baseMat: {fileID: 2100000, guid: 4a44196c05d512f41a64d22626a5da65, type: 2}
