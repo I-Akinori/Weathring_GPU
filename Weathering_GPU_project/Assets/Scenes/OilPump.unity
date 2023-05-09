@@ -1480,8 +1480,8 @@ MonoBehaviour:
   active_Fracture: 1
   active_Stains: 1
   active_UV: 1
-  active_Debug: 1
-  active_screenshot: 1
+  active_Debug: 0
+  active_screenshot: 0
   data_name: 
   mainMat: {fileID: 2100000, guid: 793f77cb6412338418c2ec8e51b7111a, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}

@@ -590,8 +590,8 @@ void InitVert
     _VertBufferRW[P_ID].localSpeed = 1;
 
     _VertBufferRW[P_ID].uv = _UVBuffer[P_ID];
-    _VertBufferRW[P_ID].uv.x = (-_VertBufferRW[P_ID].pos0.x * 0.3 + 0.6);
-    _VertBufferRW[P_ID].uv.y = _VertBufferRW[P_ID].pos0.y * 0.3 + 0.5;
+    //_VertBufferRW[P_ID].uv.x = (-_VertBufferRW[P_ID].pos0.x * 0.3 + 0.6);
+    //_VertBufferRW[P_ID].uv.y = _VertBufferRW[P_ID].pos0.y * 0.3 + 0.5;
     //_VertBufferRW[P_ID].edge = -1;
 
     float rand = frac(sin(dot(_VertBufferRW[P_ID].pos, float3(12.9898, 78.233, 43.622))) * 43758.5453);

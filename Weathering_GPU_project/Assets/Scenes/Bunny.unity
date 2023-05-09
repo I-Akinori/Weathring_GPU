@@ -25,8 +25,8 @@ RenderSettings:
   m_AmbientGroundColor: {r: 0.047, g: 0.043, b: 0.035, a: 1}
   m_AmbientIntensity: 1
   m_AmbientMode: 0
-  m_SubtractiveShadowColor: {r: 0.42, g: 0.478, b: 0.627, a: 1}
-  m_SkyboxMaterial: {fileID: 10304, guid: 0000000000000000f000000000000000, type: 0}
+  m_SubtractiveShadowColor: {r: 1, g: 1, b: 1, a: 1}
+  m_SkyboxMaterial: {fileID: 0}
   m_HaloStrength: 0.5
   m_FlareStrength: 1
   m_FlareFadeSpeed: 3
@@ -38,7 +38,7 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 705507994}
-  m_IndirectSpecularColor: {r: 0.44657898, g: 0.4964133, b: 0.5748178, a: 1}
+  m_IndirectSpecularColor: {r: 0, g: 0, b: 0, a: 1}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -97,7 +97,7 @@ LightmapSettings:
     m_ExportTrainingData: 0
     m_TrainingDataDestination: TrainingData
     m_LightProbeSampleCountMultiplier: 4
-  m_LightingDataAsset: {fileID: 0}
+  m_LightingDataAsset: {fileID: 112000000, guid: 658c9f2a9b015c946970daf1cc8bdfe3, type: 2}
   m_LightingSettings: {fileID: 0}
 --- !u!196 &4
 NavMeshSettings:
@@ -445,8 +445,8 @@ MonoBehaviour:
   active_Fracture: 1
   active_Stains: 1
   active_UV: 1
-  active_Debug: 1
-  active_screenshot: 1
+  active_Debug: 0
+  active_screenshot: 0
   data_name: 
   mainMat: {fileID: 2100000, guid: 793f77cb6412338418c2ec8e51b7111a, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
@@ -1391,8 +1391,8 @@ Light:
   serializedVersion: 10
   m_Type: 1
   m_Shape: 0
-  m_Color: {r: 1, g: 0.95686275, b: 0.8392157, a: 1}
-  m_Intensity: 1
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Intensity: 0.5
   m_Range: 10
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
@@ -5365,7 +5365,7 @@ Transform:
   m_GameObject: {fileID: 8164078559671825235}
   m_LocalRotation: {x: 0, y: 1, z: 0, w: 0}
   m_LocalPosition: {x: 0, y: -3, z: 0}
-  m_LocalScale: {x: 3, y: 3, z: 3}
+  m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -5420,7 +5420,7 @@ MeshFilter:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 8164078559671825235}
-  m_Mesh: {fileID: -2432090755550338912, guid: f012fed285936bb4793a43f2dcd8c605, type: 3}
+  m_Mesh: {fileID: -2432090755550338912, guid: 0e6f5bad98f565145936490ea6fc12ec, type: 3}
 --- !u!1 &8164078559671825235
 GameObject:
   m_ObjectHideFlags: 0
@@ -5454,4 +5454,4 @@ MeshCollider:
   serializedVersion: 4
   m_Convex: 0
   m_CookingOptions: 30
-  m_Mesh: {fileID: -2432090755550338912, guid: f012fed285936bb4793a43f2dcd8c605, type: 3}
+  m_Mesh: {fileID: -2432090755550338912, guid: 0e6f5bad98f565145936490ea6fc12ec, type: 3}

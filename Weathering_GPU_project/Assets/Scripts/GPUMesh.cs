@@ -176,6 +176,7 @@ namespace Weathering_GPU
         int TearEdge;
 
         int count = 0;
+        int sw_count = 0;
         const int SIMULATION_BLOCK_SIZE = 256;
         public ComputeShader CS;
         GraphicsBuffer _positionBuffer;      // �������p
@@ -200,6 +201,16 @@ namespace Weathering_GPU
         GraphicsBuffer _lockProcessBuffer;     // 1�t���[����1�x�����F�߂Ȃ�����
         GraphicsBuffer _vertCounterBuffer;           // GPU���ł̕ύX��������_�̐�
         GraphicsBuffer _blankIndexBuffer;
+
+        private System.Diagnostics.Stopwatch sw0 = new System.Diagnostics.Stopwatch();
+        private System.Diagnostics.Stopwatch sw1 = new System.Diagnostics.Stopwatch();
+        private System.Diagnostics.Stopwatch sw2 = new System.Diagnostics.Stopwatch();
+        private System.Diagnostics.Stopwatch sw3 = new System.Diagnostics.Stopwatch();
+        private System.Diagnostics.Stopwatch sw4 = new System.Diagnostics.Stopwatch();
+        private System.Diagnostics.Stopwatch sw5 = new System.Diagnostics.Stopwatch();
+        private System.Diagnostics.Stopwatch sw6 = new System.Diagnostics.Stopwatch();
+        private System.Diagnostics.Stopwatch sw7 = new System.Diagnostics.Stopwatch();
+        private System.Diagnostics.Stopwatch sw8 = new System.Diagnostics.Stopwatch();
 
         void InitNums()
         {
@@ -766,12 +777,11 @@ namespace Weathering_GPU
             var uv = new Vector2[baseFilter.mesh.vertexCount];
             _baseUVBuffer.GetData(uv);
             baseFilter.mesh.uv = uv;
-            UnityEngine.Debug.Log(baseFilter.mesh.uv[100] + "/" + baseFilter.mesh.vertices[100]);
-            UnityEngine.Debug.Log(baseFilter.mesh.uv[101] + "/" + baseFilter.mesh.vertices[101]);
         }
         // Start is called before the first frame update
         void Start()
         {
+            sw0.Start();
             if (TryGetComponent<MeshFilter>(out var mf))
             {
                 var triangles = new int[mf.mesh.triangles.Length];
@@ -806,20 +816,28 @@ namespace Weathering_GPU
             CS.SetVector("_gravity", Quaternion.Inverse(this.transform.localRotation) * new Vector4(0, -1, 0, 0));
 
             locked_verts = new List<int>();     // �f�o�b�O�p
+            sw0.Stop();
         }
 
         // Update is called once per frame
         void Update()
         {
-
+            sw8.Start();    // Start: Total
+            sw1.Start();    // Start: Compute Geometry Parameter
             CS.SetFloat("_delta_time", Time.deltaTime * SimulationSpeedSlider.SliderValue * (ReverseToggle._reverse ? - 1 : 1));
-
+            CS.SetFloat("k1", 0.0f);
+            CS.SetFloat("k2", 100000.0f);
+            CS.SetFloat("_intensity", intensity);
+            CS.SetFloat("_crack_history", history);
+            CS.SetFloat("_curl", curl);
             // GPU�Œ��_���ǉ����ꂽ�ꍇ�AvertNum�ȏ��ID�ɑ΂��ĎQ�Ƃ��ꂤ��̂�edgeNum�ŌŒ肷��
             _lockProcessBuffer.SetData(new uint[edgeNum]);
 
             CS.Dispatch(ComputeVertCurvature, vertGS, 1, 1);
             CS.Dispatch(ComputeEdgeCurvature, edgeGS, 1, 1);
+            sw1.Stop();     // Stop: Compute Geometry Parameter
 
+            sw2.Start();    // Start: Stains
             if (active_Stains)
             {
                 CS.Dispatch(AccumulateDust, vertGS, 1, 1);
@@ -827,19 +845,16 @@ namespace Weathering_GPU
                 CS.Dispatch(PropagateRust, vertGS, 1, 1);
                 CS.Dispatch(ProceedChalking, vertGS, 1, 1);
             }
-            //CS.SetFloat("length_ratio", 1.25f - 0.25f * Mathf.Cos(Time.time * 0.5f));
-            CS.SetFloat("k1", 0.0f);
-            CS.SetFloat("k2", 100000.0f);
-            CS.SetFloat("_intensity", intensity);
-            CS.SetFloat("_crack_history", history);
-            CS.SetFloat("_curl", curl);
-            //CS.Dispatch(PBD_UpdateConstraint, edgeGS, 1, 1); // ����X�V
+            sw2.Stop();     // Stop: Stains
 
+            sw3.Start();    // Start: Position Based Deformation
             if (active_PBD)
             {
                 PBD_Simulation();
             }
+            sw3.Stop();     // Stop: Position Based Deformation
 
+            sw4.Start();    // Start: Fracture
             if (active_Fracture)
             {
                 // �g�͌v�Z (���O��ComputeEdgeCurvature����s���邱��)
@@ -849,10 +864,8 @@ namespace Weathering_GPU
                 CS.Dispatch(SetContractionBuffer, faceGS, 1, 1);
                 CS.Dispatch(UpdateBindingForce, faceGS, 1, 1);
             }
-
             var countArr = new uint[2];
             _vertCounterBuffer.GetData(countArr);
-            //UnityEngine.Debug.Log(countArr[1]);
 
             if (active_Fracture)
             {
@@ -860,10 +873,11 @@ namespace Weathering_GPU
                 if (SimulationSpeedSlider.SliderValue > 0)
                     CS.Dispatch(TearEdge, edgeGS, 1, 1);
             }
+            sw4.Stop();     // Stop: Fracture
 
             // 頂点単位の探索 (ティザー用スピード切り替え)
-            if (Input.GetKeyDown(KeyCode.Tab))
-                CS.Dispatch(SearchVertices, vertGS, 1, 1); // ComputeShaderを実行
+            //if (Input.GetKeyDown(KeyCode.Tab))
+            //    CS.Dispatch(SearchVertices, vertGS, 1, 1); // ComputeShaderを実行
 
             // GPU���ŕύX���ꂽ���_���̔��f
             UpdateVertNum();
@@ -871,8 +885,11 @@ namespace Weathering_GPU
             var vertArr = new VertData[vertNum];
             _vertBuffer.GetData(vertArr);
 
+            sw5.Start();    // Start: Control
             InteractiveControl();
-            // �@���X�V (reculcurate normals���o�O��̂Ŏ��O�Ŏ���)
+            sw5.Stop();    // Stop: Control
+
+            sw6.Start();    // Start: Mesh Generation
             CS.Dispatch(SetFaceNormals, faceGS, 1, 1);
             CS.Dispatch(SetVertNormals, vertGS, 1, 1);
 
@@ -880,33 +897,10 @@ namespace Weathering_GPU
             CS.Dispatch(SetVertices, vertGS, 1, 1); // ComputeShader����s
             var vertexArr = new VertexData[vertNum];
             _vertexBuffer.GetData(vertexArr);
-            //UnityEngine.Debug.Log(vertexArr[100].UV);
-            //UnityEngine.Debug.Log(vertexArr[100].Col);
-
-            filt.mesh.SetVertexBufferParams(vertNum, layout);
-            filt.mesh.SetVertexBufferData(_vertexBuffer, 0, 0, vertNum);
             
-            /*
-            var posArr = new Vector3[vertNum];
-            var norArr = new Vector3[vertNum];
-            var colArr = new Color[vertNum];
-            var uvArr = new Vector2[vertNum];
-
-            for (int i = 0; i < vertexArr.Length; i++) {
-                posArr[i] = vertexArr[i].Pos;
-                norArr[i] = vertexArr[i].Nor;
-                colArr[i] = vertexArr[i].Col;
-                uvArr[i] = vertexArr[i].UV;
-            }
-            */
-            //UnityEngine.Debug.Log(posArr[100]);
-
-            //filt.mesh.Set
-            //filt.mesh.vertices = posArr;
-            //filt.mesh.normals = norArr;
-            //filt.mesh.colors = colArr;
-            //filt.mesh.uv = uvArr;
-
+            filt.mesh.SetVertexBufferParams(vertNum, layout);
+            filt.mesh.SetVertexBufferData(vertexArr, 0, 0, vertNum);
+            
             // �O�p�`�C���f�b�N�X
             CS.Dispatch(SetTriangles, faceGS, 1, 1); // ComputeShader����s
             var triangleArr = new int[faceNum * 3];
@@ -916,11 +910,30 @@ namespace Weathering_GPU
 
             //filt.mesh.RecalculateNormals();
             filt.mesh.RecalculateBounds();
+            sw6.Stop();    // Stop: Mesh Generation
+            sw8.Stop();    // Stop: Total
 
+            if (++sw_count == 1000) 
+            {
+                UnityEngine.Debug.Log("Start: " + sw0.Elapsed + " (" + sw0.Elapsed + ")" + " / " + (100 * sw0.Elapsed.TotalMilliseconds / sw0.Elapsed.TotalMilliseconds) + " %");
+                UnityEngine.Debug.Log("Total: " + sw8.Elapsed + " / " + (100 * sw8.Elapsed.TotalMilliseconds / sw8.Elapsed.TotalMilliseconds) + " %");
+                UnityEngine.Debug.Log("Geometry: " + sw1.Elapsed + " / " + (100 * sw1.Elapsed.TotalMilliseconds / sw8.Elapsed.TotalMilliseconds) + " %");
+                UnityEngine.Debug.Log("Stains: " + sw2.Elapsed + " / " + (100 * sw2.Elapsed.TotalMilliseconds / sw8.Elapsed.TotalMilliseconds) + " %");
+                UnityEngine.Debug.Log("PBD: " + sw3.Elapsed + " / " + (100 * sw3.Elapsed.TotalMilliseconds / sw8.Elapsed.TotalMilliseconds) + " %");
+                UnityEngine.Debug.Log("Fracture: " + sw4.Elapsed + " / " + (100 * sw4.Elapsed.TotalMilliseconds / sw8.Elapsed.TotalMilliseconds) + " %");
+                UnityEngine.Debug.Log("Control: " + sw5.Elapsed + " / " + (100 * sw5.Elapsed.TotalMilliseconds / sw8.Elapsed.TotalMilliseconds) + " %");
+                UnityEngine.Debug.Log("Mesh: " + sw6.Elapsed + " / " + (100 * sw6.Elapsed.TotalMilliseconds / sw8.Elapsed.TotalMilliseconds) + " %");
+                //UnityEngine.Debug.Log("Dust: " + sw7.Elapsed + " / " + (100 * sw7.Elapsed.TotalMilliseconds / sw8.Elapsed.TotalMilliseconds) + " %");
+                UnityEngine.Debug.Log("Other: " + (100f - 100 * (sw1.Elapsed.TotalMilliseconds + sw2.Elapsed.TotalMilliseconds + sw3.Elapsed.TotalMilliseconds + sw4.Elapsed.TotalMilliseconds +
+                                                            sw5.Elapsed.TotalMilliseconds + sw6.Elapsed.TotalMilliseconds + sw7.Elapsed.TotalMilliseconds) / sw8.Elapsed.TotalMilliseconds) + " %");
+
+                ScreenCapture.CaptureScreenshot("C:/Users/rhaar/Documents/weathering_file_GPU/ScreenShot_Measure_" + data_name + "_" +(sw_count) + ".png");
+            }
+            if (sw_count > 1000) sw_count = 1000;
             // Screen Shot
             count++;
             //count = 1;
-            if (active_screenshot && Input.GetKeyDown(KeyCode.Space) || count % 50 == 1)
+            if (active_screenshot && (Input.GetKeyDown(KeyCode.Space) || count % 50 == 1))
             {
                 string path = "C:/Users/rhaar/Documents/weathering_file/TextData_" + data_name + ".txt";
                 bool isAppend = true;
