@@ -1306,14 +1306,14 @@ MonoBehaviour:
   active_Fracture: 1
   active_Stains: 1
   active_UV: 1
-  active_Debug: 1
-  active_screenshot: 1
+  active_Debug: 0
+  active_screenshot: 0
   data_name: 
   mainMat: {fileID: 2100000, guid: 793f77cb6412338418c2ec8e51b7111a, type: 2}
   subMat: {fileID: 2100000, guid: aaa6dafdec80e424db97d67530467d3c, type: 2}
   baseMat: {fileID: 2100000, guid: 4a44196c05d512f41a64d22626a5da65, type: 2}
-  intensity: 0.125
-  history: 0.1
+  intensity: 1
+  history: 0.5
   curl: 0.4
   CS: {fileID: 7200000, guid: c199bc15ed28da441a805200ac94d548, type: 3}
 --- !u!23 &639108476
@@ -2268,7 +2268,7 @@ Camera:
   m_GameObject: {fileID: 946378845}
   m_Enabled: 1
   serializedVersion: 2
-  m_ClearFlags: 1
+  m_ClearFlags: 2
   m_BackGroundColor: {r: 0, g: 0, b: 0, a: 0}
   m_projectionMatrixMode: 1
   m_GateFitMode: 2
@@ -2310,7 +2310,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 946378845}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: -1, z: -12}
+  m_LocalPosition: {x: 0, y: -1, z: -15}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []

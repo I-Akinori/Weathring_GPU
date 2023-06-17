@@ -1838,9 +1838,13 @@ void UpdateBindingForce
     _LengthConstraintBufferRW[en].offset = _LengthConstraintBufferRW[en].offset0 * (1.0 - _FaceBufferRW[_EdgeBufferRW[P_ID].face].contraction * 0.0001); //- _FaceBufferRW[P_ID].contraction / k2; //
     _LengthConstraintBufferRW[ep].offset = _LengthConstraintBufferRW[ep].offset0 * (1.0 - _FaceBufferRW[_EdgeBufferRW[P_ID].face].contraction * 0.0001); //- _FaceBufferRW[P_ID].contraction / k2;
 
-    _BendConstraintBufferRW[ei].offset = _BendConstraintBufferRW[ei].offset0 + (_delta_time * in_speed < 0 ? 0: _curl);//min(_FaceBufferRW[P_ID].contraction / k2 * 100, 0.4);
-    _BendConstraintBufferRW[en].offset = _BendConstraintBufferRW[en].offset0 + (_delta_time * np_speed < 0 ? 0 : _curl);//min(_FaceBufferRW[P_ID].contraction / k2 * 100, 0.4);
-    _BendConstraintBufferRW[ep].offset = _BendConstraintBufferRW[ep].offset0 + (_delta_time * pi_speed < 0 ? 0 : _curl);//min(_FaceBufferRW[P_ID].contraction / k2 * 100, 0.4);
+    //_BendConstraintBufferRW[ei].offset = _BendConstraintBufferRW[ei].offset0 + (_delta_time * in_speed < 0 ? 0 : _curl);//min(_FaceBufferRW[P_ID].contraction / k2 * 100, 0.4);
+    //_BendConstraintBufferRW[en].offset = _BendConstraintBufferRW[en].offset0 + (_delta_time * np_speed < 0 ? 0 : _curl);//min(_FaceBufferRW[P_ID].contraction / k2 * 100, 0.4);
+    //_BendConstraintBufferRW[ep].offset = _BendConstraintBufferRW[ep].offset0 + (_delta_time * pi_speed < 0 ? 0 : _curl);//min(_FaceBufferRW[P_ID].contraction / k2 * 100, 0.4);
+    _BendConstraintBufferRW[ei].offset = _BendConstraintBufferRW[ei].offset0 + _curl * max(0, _EdgeBufferRW[ei].liftingForce * 0.05);//min(_FaceBufferRW[P_ID].contraction / k2 * 100, 0.4);
+    _BendConstraintBufferRW[en].offset = _BendConstraintBufferRW[en].offset0 + _curl * max(0, _EdgeBufferRW[ei].liftingForce * 0.05);//min(_FaceBufferRW[P_ID].contraction / k2 * 100, 0.4);
+    _BendConstraintBufferRW[ep].offset = _BendConstraintBufferRW[ep].offset0 + _curl * max(0, _EdgeBufferRW[ei].liftingForce * 0.05);//min(_FaceBufferRW[P_ID].contraction / k2 * 100, 0.4);
+
 
     _FaceBufferRW[P_ID].tension = max(_FaceBufferRW[P_ID].contraction, 0);
 

@@ -913,6 +913,9 @@ namespace Weathering_GPU
             sw6.Stop();    // Stop: Mesh Generation
             sw8.Stop();    // Stop: Total
 
+            if (sw_count == 0)
+                ScreenCapture.CaptureScreenshot("C:/Users/rhaar/Documents/weathering_file_GPU/ScreenShot_Measure_" + data_name + "_" + (sw_count) + ".png");
+
             if (++sw_count == 1000) 
             {
                 UnityEngine.Debug.Log("Start: " + sw0.Elapsed + " (" + sw0.Elapsed + ")" + " / " + (100 * sw0.Elapsed.TotalMilliseconds / sw0.Elapsed.TotalMilliseconds) + " %");
